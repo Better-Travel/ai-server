@@ -104,6 +104,10 @@ The server is stateless: send the full history on each call.
   function `search_places` uses; with `trip` the first sentence is `Trip.describe()`.
 - `GET /health`
 
+Mobile app integration (streaming chat, proposed): [docs/mobile-chat-api.md](docs/mobile-chat-api.md)
+for the contract, [docs/mobile-integration-plan.md](docs/mobile-integration-plan.md) for the gap
+analysis and plan.
+
 ## Checks
 
 ```bash
