@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Callable
 from typing import Any
@@ -6,6 +7,7 @@ from .prompt import build_system_prompt, build_user_prompt
 from .runner import QuerySyntaxError, run_query
 from .schemas import OverpassElement, PipelineResult, PlacesInput
 
+logger = logging.getLogger(__name__)
 Message = dict[str, Any]
 Completer = Callable[[list[Message]], str]
 Runner = Callable[[str], list[OverpassElement]]
@@ -39,9 +41,11 @@ def generate_and_run(
     while True:
         attempts += 1
         query = clean_query(complete(messages))
+        logger.info("Overpass query attempt %d: %s", attempts, query)
         try:
             return PipelineResult(query=query, results=run(query), attempts=attempts)
         except QuerySyntaxError as exc:
+            logger.warning("Overpass rejected query (attempt %d): %s", attempts, exc)
             if attempts > max_fixes:
                 raise QueryGenerationFailed(query, str(exc), attempts) from exc
             messages += [

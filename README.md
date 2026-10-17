@@ -25,6 +25,17 @@ uv run streamlit run ui/streamlit_app.py
 Chat with Betty and click **Summarize trip** in the sidebar. The API URL defaults to
 `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar field).
 
+The page also has a **Debug tools** section: an expander with the chat history as JSON (copy icon on
+the box), and two tabs (Summarize, Readiness check) where you can type request JSON or plain text,
+click **Load current chat** to fill the box with the live conversation, run it, and see the output.
+
+## Logging
+
+The API logs to the console (`LOG_LEVEL`, default `INFO`): incoming requests, every LLM response
+text and tool call, tool results, the generated Overpass queries, and the final reply.
+`LOG_LEVEL=DEBUG` also logs the full request payload sent to the model. Logs include user text,
+so keep them local.
+
 ## Place search tool (OpenStreetMap)
 
 During `/api/v1/chat`, Betty can call a `find_places` tool to look up real restaurants, cafes,

@@ -170,3 +170,9 @@ def test_tolerates_llm_quirks_seen_in_live_model() -> None:
     assert context.destination.city == "Warsaw"
     assert context.companions is None and context.budget is None
     assert context.interests == ["local food"]
+
+
+def test_llm_response_text_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO")
+    make_service(Script(text("Where to, traveller?"))).chat(USER)
+    assert "Where to, traveller?" in caplog.text

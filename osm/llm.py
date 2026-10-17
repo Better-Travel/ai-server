@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, cast
 
@@ -5,6 +6,7 @@ from dotenv import load_dotenv
 from openai import APIStatusError, OpenAI
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 
 
@@ -37,7 +39,9 @@ class FallbackClient:
                 response = client.chat.completions.create(
                     model=model_name(), messages=cast(Any, messages), temperature=0
                 )
-                return response.choices[0].message.content or ""
+                text = response.choices[0].message.content or ""
+                logger.info("OSM query LLM response (model=%s): %r", model_name(), text)
+                return text
             except APIStatusError as exc:
                 if exc.status_code not in (401, 403, 429):
                     raise

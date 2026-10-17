@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     betty_max_tokens: int = Field(default=1024, gt=0)
     betty_places_tool: bool = Field(default=True, description="Let Betty search OpenStreetMap.")
     betty_max_tool_rounds: int = Field(default=3, gt=0)
+    log_level: str = Field(default="INFO", description="DEBUG, INFO, WARNING, ...")
     request_timeout_seconds: float = Field(default=60.0, gt=0)
 
 
