@@ -1,0 +1,47 @@
+.env.example
+  s_dd54cb86f697d4::t_df67901d0c1034 10-15
+README.md
+  s_dd54cb86f697d4::t_3fd58248a4883d 28-39
+app/config.py
+  s_dd54cb86f697d4::t_39e5cd8b014fc1 19-20
+app/prompts.py
+  s_dd54cb86f697d4::t_f03f876149d873 28-31
+app/services/betty_service.py
+  s_dd54cb86f697d4::t_1b8cb2057af8bb 3-4,12,22-27,29-33,46,61-65,73-113,115-124
+app/services/places_tool.py
+  s_dd54cb86f697d4::t_1aaee59742825c 1-67
+osm/llm.py
+  s_dd54cb86f697d4::t_ac109c74060b68 2,17-21,33,38
+osm/pipeline.py
+  s_dd54cb86f697d4::t_7a700edcd62a90 2-3,9-10,51-53
+osm/prompt.py
+  s_dd54cb86f697d4::t_9624e87b414f66 14-16,30-32
+osm/runner.py
+  s_dd54cb86f697d4::t_fd537776ca2b64 3,28
+osm/schemas.py
+  s_dd54cb86f697d4::t_329a4e83488783 148-150
+tests/test_pipeline.py
+  s_dd54cb86f697d4::t_faf1205d65e2f9 3,5,8-17,21,25,27,29,33,40,43,47-48
+tests/test_places_tool.py
+  s_dd54cb86f697d4::t_0f74bd1a2c8271 1-99
+tests/test_runner.py
+  s_dd54cb86f697d4::t_77492b781ac110 1-2,9,13,24,30-31,33,35-37,43,48-49,51
+tests/test_schemas.py
+  s_dd54cb86f697d4::t_93465c08bdba09 1-2,9-19,22,26,31,36,42,49,51-53,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "3084f1c51ed49eba0e6d8847b76ce8d2c33762e8",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
