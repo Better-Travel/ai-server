@@ -155,6 +155,19 @@ class PlacesInput(BaseModel):
     places: list[PlaceRequest] = Field(min_length=1)
 
 
+class WikipediaText(BaseModel):
+    title: str
+    url: str
+    extract: str
+
+
+class WikipediaInfo(BaseModel):
+    """The article's intro in each supported language; a language is None if it has no article."""
+
+    pl: WikipediaText | None = None
+    en: WikipediaText | None = None
+
+
 class OverpassElement(BaseModel):
     id: int
     type: Literal["node", "way", "relation"]
@@ -162,6 +175,7 @@ class OverpassElement(BaseModel):
     lon: float | None = None
     name: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    wikipedia: WikipediaInfo | None = None
 
 
 class PipelineResult(BaseModel):

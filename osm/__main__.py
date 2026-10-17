@@ -6,11 +6,13 @@ from pathlib import Path
 from osm.llm import FallbackClient, make_clients
 from osm.pipeline import generate_and_run
 from osm.schemas import PlacesInput
+from osm.wikipedia import enrich
 
 
 def main(path: str) -> None:
     places = PlacesInput.model_validate_json(Path(path).read_text())
     result = generate_and_run(places, FallbackClient(make_clients()).complete)
+    result.results = enrich(result.results)
     print(f"-- attempts: {result.attempts}\n{result.query}\n")
     print(result.model_dump_json(include={"results"}, indent=2))
 
