@@ -1,7 +1,5 @@
 """Pydantic request/response models for the REST API."""
 
-import contextlib
-import json
 from datetime import date
 from typing import Any, Literal, Self
 
@@ -18,66 +16,54 @@ class Message(BaseModel):
 _EMPTY_WORDS = {"", "none", "null", "n/a", "na", "unknown", "not specified", "unspecified"}
 
 
-class Destination(BaseModel):
-    """Where the trip happens; must be small enough for one bounded OpenStreetMap query."""
+class Trip(BaseModel):
+    """The confirmed minimum for a place search: one city or district, plus the timing.
 
-    city: str = Field(min_length=1, description="City or town, e.g. 'Warsaw'.")
-    district: str | None = Field(default=None, description="Neighbourhood/district if narrowed.")
-    country: str = Field(min_length=1, description="Country, e.g. 'Poland'.")
-    scope: Literal["city", "district", "region", "country"] = Field(
-        description="Size of the area the traveller wants to plan. Use 'region' or 'country' "
-        "if they have not narrowed it to one city or district."
+    Everything else the traveller said (interests, companions, budget, ...) is taken from the
+    conversation by the summariser, so it is not part of this model.
+    """
+
+    city: str = Field(min_length=1, description="City or town as the traveller named it.")
+    district: str | None = Field(
+        default=None, description="Neighbourhood or district, only if the traveller narrowed it."
     )
-
-
-class TripContext(BaseModel):
-    """Validated trip details; the hard minimum is a narrow destination plus timing."""
-
-    destination: Destination
-    start_date: date | None = Field(default=None, description="ISO date YYYY-MM-DD.")
-    end_date: date | None = Field(default=None, description="ISO date YYYY-MM-DD.")
-    duration_days: int | None = Field(default=None, ge=1, le=60)
-    interests: list[str] = Field(default_factory=list)
-    free_hours: str | None = Field(default=None, description="Daily free hours, if mentioned.")
-    companions: str | None = None
-    budget: str | None = None
-    notes: str | None = Field(default=None, description="Pace, diet, accessibility, transport...")
+    country: str = Field(description="ISO 3166-1 alpha-2 country code, e.g. 'PL' for Poland.")
+    scope: Literal["city", "district", "region", "country"] = Field(
+        description="Size of the area the traveller wants. Use 'region' or 'country' if they "
+        "have not narrowed it to one city or district."
+    )
+    start_date: date | None = Field(
+        default=None, description="ISO date YYYY-MM-DD, only if the traveller gave it."
+    )
+    end_date: date | None = Field(
+        default=None, description="ISO date YYYY-MM-DD, only if the traveller gave it."
+    )
+    duration_days: int | None = Field(
+        default=None, ge=1, le=60, description="Number of days, only if the traveller gave it."
+    )
 
     @model_validator(mode="before")
     @classmethod
     def _tolerate_llm_quirks(cls, data: Any) -> Any:
-        """Models sometimes JSON-encode nested objects or write "none" for unknown values."""
+        """Models sometimes write "none" (or similar) instead of leaving a field out."""
         if not isinstance(data, dict):
             return data
-        data = dict(data)
-        if isinstance(data.get("destination"), str):
-            # On bad JSON the string is left as-is so validation reports it.
-            with contextlib.suppress(json.JSONDecodeError):
-                data["destination"] = json.loads(data["destination"])
-        for key in (
-            "start_date",
-            "end_date",
-            "duration_days",
-            "free_hours",
-            "companions",
-            "budget",
-            "notes",
-        ):
-            value = data.get(key)
-            if isinstance(value, str) and value.strip().lower() in _EMPTY_WORDS:
-                data[key] = None
-        if isinstance(data.get("interests"), str):
-            data["interests"] = [data["interests"]]
-        return data
+        return {
+            key: None if isinstance(value, str) and value.strip().lower() in _EMPTY_WORDS else value
+            for key, value in data.items()
+        }
 
-    @field_validator("interests", mode="after")
+    @field_validator("country")
     @classmethod
-    def _drop_empty_interests(cls, value: list[str]) -> list[str]:
-        return [v for v in value if v.strip().lower() not in _EMPTY_WORDS]
+    def _country_is_alpha2(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) != 2 or not value.isalpha():
+            raise ValueError("country must be an ISO 3166-1 alpha-2 code such as 'PL'")
+        return value
 
     @model_validator(mode="after")
     def _meets_minimum_requirements(self) -> Self:
-        if self.destination.scope not in ("city", "district"):
+        if self.scope not in ("city", "district"):
             raise ValueError(
                 "destination is too broad: ask the traveller which single city or district "
                 "to plan, then call the tool again"
@@ -103,6 +89,54 @@ class TripContext(BaseModel):
                 )
         return self
 
+    def describe(self) -> str:
+        """Deterministic text of the validated facts; leads the summary sent to find_places."""
+        where = f"{self.district}, {self.city}" if self.district else self.city
+        text = f"Destination: {where}, country {self.country}."
+        when: list[str] = []
+        if self.start_date and self.end_date:
+            when.append(f"{self.start_date.isoformat()} to {self.end_date.isoformat()}")
+        elif self.start_date:
+            when.append(f"from {self.start_date.isoformat()}")
+        if self.duration_days:
+            when.append(f"{self.duration_days} day{'s' if self.duration_days != 1 else ''}")
+        if when:
+            text += f" Dates: {', '.join(when)}."
+        return text
+
+
+class WikipediaSnippet(BaseModel):
+    """Intro of a place's Wikipedia article in one language."""
+
+    title: str
+    url: str
+    extract: str
+
+
+class Place(BaseModel):
+    """One OpenStreetMap result as shown to Betty and returned to the client."""
+
+    name: str | None = None
+    type: Literal["node", "way", "relation"]
+    lat: float | None = None
+    lon: float | None = None
+    tags: dict[str, str] = Field(default_factory=dict)
+    wikipedia: dict[str, WikipediaSnippet] | None = Field(
+        default=None, description="Keyed by language code ('pl', 'en')."
+    )
+
+
+class PlaceSearch(BaseModel):
+    """Outcome of a search_places call that passed validation (the 'enough info' signal)."""
+
+    trip: Trip
+    summary: str = Field(description="Exact text passed to find_places.")
+    total: int = Field(default=0, description="Number of places OpenStreetMap returned.")
+    places: list[Place] = Field(default_factory=list, description="The first results (max 20).")
+    error: str | None = Field(
+        default=None, description="Set when the trip was accepted but the search failed."
+    )
+
 
 class ChatRequest(BaseModel):
     """Conversation history so far; the last message must come from the user."""
@@ -111,23 +145,25 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Betty's next reply, plus the trip context once she judged the info sufficient."""
+    """Betty's next reply, plus the place search if she ran one this turn."""
 
     reply: str
-    ready: bool = False
-    trip_context: TripContext | None = None
+    search: PlaceSearch | None = Field(
+        default=None,
+        description="Set only on a turn where Betty had enough information and searched.",
+    )
 
 
 class SummarizeRequest(BaseModel):
     """Conversation to condense into a trip summary."""
 
     messages: list[Message] = Field(min_length=1)
-    trip_context: TripContext | None = Field(
-        default=None, description="Structured context from /chat; used as the source of truth."
+    trip: Trip | None = Field(
+        default=None, description="Validated trip (e.g. `search.trip` from /chat); authoritative."
     )
 
 
 class SummarizeResponse(BaseModel):
-    """Single-paragraph trip summary."""
+    """Single-paragraph trip summary (the same text search_places passes to find_places)."""
 
     summary: str

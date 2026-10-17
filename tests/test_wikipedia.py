@@ -1,16 +1,15 @@
 """Wikipedia lookups by exact title, in Polish and English (offline, httpx.MockTransport)."""
 
-import json
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
 
-from app.services.places_tool import PlacesTool
+from app.services.place_finder import PlaceFinder
 from osm.schemas import OverpassElement
 from osm.wikipedia import enrich, fetch_summaries, parse_wikipedia_tag
 
-ARGS = json.dumps({"request": "Visiting Warszawa, Poland: sights and cafes."})
+REQUEST = "Visiting Warszawa, Poland: sights and cafes."
 
 
 class FakeWikipedia:
@@ -209,7 +208,7 @@ def test_enrich_makes_no_request_without_tags() -> None:
     assert wiki.requests == []
 
 
-def test_places_tool_returns_both_languages_trimmed(monkeypatch: Any) -> None:
+def test_place_finder_returns_both_languages_trimmed(monkeypatch: Any) -> None:
     wiki = FakeWikipedia()
     wiki.articles[("pl", "Zamek")] = "słowo " * 200
     wiki.articles[("en", "Castle")] = "English intro."
@@ -218,12 +217,12 @@ def test_places_tool_returns_both_languages_trimmed(monkeypatch: Any) -> None:
         id=1, type="way", lat=52.2, lon=21.0, name="Zamek", tags={"wikipedia": "pl:Zamek"}
     )
     monkeypatch.setattr(
-        "app.services.places_tool.generate_and_run",
+        "app.services.place_finder.generate_and_run",
         lambda request, complete: SimpleNamespace(results=[element]),
     )
-    monkeypatch.setattr("app.services.places_tool.enrich", lambda els: enrich(els, wiki.client()))
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda els: enrich(els, wiki.client()))
 
-    place = json.loads(PlacesTool(lambda: lambda m: "q")(ARGS))["places"][0]
+    place = PlaceFinder(lambda: lambda m: "q")(REQUEST).places[0].model_dump(exclude_none=True)
 
     assert set(place["wikipedia"]) == {"pl", "en"}
     assert place["wikipedia"]["en"]["extract"] == "English intro."

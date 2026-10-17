@@ -11,14 +11,19 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.config import Settings
-from app.prompts import SUMMARY_SYSTEM_PROMPT, build_chat_prompt
-from app.schemas import Message, TripContext
-from app.services.places_tool import TOOL_NAME as PLACES_TOOL_NAME
-from app.services.places_tool import TOOL_SPEC as PLACES_TOOL_SPEC
-from app.services.places_tool import PlacesTool
-from app.services.trip_context_tool import TOOL_NAME as TRIP_TOOL_NAME
-from app.services.trip_context_tool import TOOL_SPEC as TRIP_TOOL_SPEC
-from app.services.trip_context_tool import parse_trip_context
+from app.prompts import (
+    PREFERENCES_SYSTEM_PROMPT,
+    SUMMARY_SYSTEM_PROMPT,
+    build_chat_prompt,
+)
+from app.schemas import Message, PlaceSearch, Trip
+from app.services.place_finder import FoundPlaces, PlaceFinder, PlaceSearcher
+from app.services.search_places_tool import TOOL_NAME as SEARCH_TOOL_NAME
+from app.services.search_places_tool import TOOL_SPEC as SEARCH_TOOL_SPEC
+from app.services.search_places_tool import parse_trip, rejected_result, search_result
+
+MAX_PREFERENCES_CHARS = 800
+NO_PREFERENCES = "NONE"
 
 
 class BettyError(RuntimeError):
@@ -33,21 +38,21 @@ class ChatResult:
     """Outcome of one chat turn."""
 
     reply: str
-    trip_context: TripContext | None = None
+    search: PlaceSearch | None = None
 
 
 class BettyService:
-    """Wraps the OpenAI SDK client to provide chat and summarisation."""
+    """Wraps the OpenAI SDK client to provide chat, summarisation and place search."""
 
     def __init__(
         self,
         settings: Settings,
         client: OpenAI | None = None,
-        places_tool: Callable[[str], str] | None = None,
+        place_finder: PlaceSearcher | None = None,
     ) -> None:
         self._settings = settings
-        self._places_tool: Callable[[str], str] | None = (
-            (places_tool if places_tool is not None else PlacesTool())
+        self._find_places: PlaceSearcher | None = (
+            (place_finder if place_finder is not None else PlaceFinder())
             if settings.betty_places_tool
             else None
         )
@@ -62,45 +67,77 @@ class BettyService:
         self._client = client
 
     def chat(self, messages: Sequence[Message]) -> ChatResult:
-        """Return Betty's next reply; `trip_context` is set when she judged the info sufficient."""
-        captured: list[TripContext] = []
+        """Return Betty's next reply; `search` is set when she had enough info and searched."""
+        searches: list[PlaceSearch] = []
 
-        def finalize(arguments: str) -> str:
-            context, feedback = parse_trip_context(arguments)
-            if context is not None:
-                captured.append(context)
-            return feedback
+        def search_places(arguments: str) -> str:
+            trip = parse_trip(arguments)
+            if not isinstance(trip, Trip):
+                return rejected_result(trip)
+            search, tool_result = self._search(messages, trip)
+            searches.append(search)
+            return tool_result
 
-        tools: list[dict[str, Any]] = []
-        handlers: dict[str, Callable[[str], str]] = {TRIP_TOOL_NAME: finalize}
-        if self._places_tool is not None:
-            tools.append(PLACES_TOOL_SPEC)
-            handlers[PLACES_TOOL_NAME] = self._places_tool
-        tools.append(TRIP_TOOL_SPEC)
         reply = self._complete(
-            build_chat_prompt(date.today()), messages, tools=tools, handlers=handlers
+            build_chat_prompt(date.today()),
+            messages,
+            tools=[SEARCH_TOOL_SPEC],
+            handlers={SEARCH_TOOL_NAME: search_places},
         )
-        return ChatResult(reply=reply, trip_context=captured[-1] if captured else None)
+        return ChatResult(reply=reply, search=searches[-1] if searches else None)
 
-    def summarize(
-        self, messages: Sequence[Message], trip_context: TripContext | None = None
-    ) -> str:
-        """Condense the conversation into one structured paragraph."""
+    def summarize(self, messages: Sequence[Message], trip: Trip | None = None) -> str:
+        """Condense the conversation into one plain-text paragraph.
+
+        With a validated `trip`, the paragraph starts with `trip.describe()` (built by code, so
+        the destination and dates can't drift) and the model only adds stated preferences.
+        """
         transcript = "\n".join(
             f"{'Traveller' if m.role == 'user' else 'Betty'}: {m.content}" for m in messages
         )
-        structured = (
-            f"Confirmed trip details (authoritative):\n{trip_context.model_dump_json()}\n\n"
-            if trip_context
-            else ""
+        request = Message(role="user", content=f"Conversation:\n{transcript}")
+        if trip is None:
+            # Collapse any stray line breaks so the output is guaranteed to be one paragraph.
+            return " ".join(
+                self._complete(SUMMARY_SYSTEM_PROMPT, [request], temperature=0.2).split()
+            )
+        preferences = " ".join(
+            self._complete(PREFERENCES_SYSTEM_PROMPT, [request], temperature=0.2).split()
         )
-        request = Message(
-            role="user",
-            content=f"{structured}Conversation:\n{transcript}\n\n"
-            "Write the trip summary paragraph now.",
+        if not preferences or preferences.rstrip(".").upper() == NO_PREFERENCES:
+            return trip.describe()
+        return f"{trip.describe()} {preferences[:MAX_PREFERENCES_CHARS]}"
+
+    def _search(self, messages: Sequence[Message], trip: Trip) -> tuple[PlaceSearch, str]:
+        """Summarise the conversation, run find_places on it; return the outcome + tool text."""
+        try:
+            summary = self.summarize(messages, trip)
+        except BettyError as exc:
+            # The validated facts alone are still a correct (if less specific) search.
+            logger.warning("summary failed, searching with the trip facts only: %s", exc)
+            summary = trip.describe()
+        if self._find_places is None:
+            found = FoundPlaces(
+                status="error", message="Place search is disabled (BETTY_PLACES_TOOL=false)."
+            )
+        else:
+            logger.info("find_places request: %r", summary)
+            found = self._find_places(summary)
+        logger.info(
+            "find_places result: status=%s total=%d shown=%d message=%r",
+            found.status,
+            found.total,
+            len(found.places),
+            found.message,
         )
-        # Collapse any stray line breaks so the output is guaranteed to be one paragraph.
-        return " ".join(self._complete(SUMMARY_SYSTEM_PROMPT, [request], temperature=0.2).split())
+        search = PlaceSearch(
+            trip=trip,
+            summary=summary,
+            total=found.total,
+            places=found.places,
+            error=None if found.status == "ok" else found.message,
+        )
+        return search, search_result(summary, found)
 
     def _complete(
         self,
@@ -118,6 +155,7 @@ class BettyService:
                 payload.append({"role": "assistant", "content": m.content})
         handlers = handlers or {}
         max_rounds = self._settings.betty_max_tool_rounds
+        retried_empty = False
         for round_number in range(max_rounds + 1):
             kwargs: dict[str, Any] = {}
             # On the final round stop offering tools so the model must answer in text.
@@ -150,6 +188,11 @@ class BettyService:
             if not tool_calls:
                 content = message.content if message else None
                 if not content or not content.strip():
+                    # The NVIDIA endpoint occasionally returns no content; one retry fixes it.
+                    if not retried_empty:
+                        retried_empty = True
+                        logger.warning("empty model response, retrying once")
+                        continue
                     raise BettyError("Model returned an empty response.")
                 return str(content).strip()
             assert message is not None

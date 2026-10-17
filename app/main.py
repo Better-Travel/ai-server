@@ -65,17 +65,16 @@ def chat(request: ChatRequest, betty: BettyDep) -> ChatResponse:
             request.messages[-1].content,
         )
         result = betty.chat(request.messages)
+        search = result.search
         logger.info(
-            "chat done: ready=%s reply=%r trip_context=%s",
-            result.trip_context is not None,
+            "chat done: searched=%s reply=%r trip=%s places=%s error=%r",
+            search is not None,
             result.reply,
-            result.trip_context.model_dump_json() if result.trip_context else None,
+            search.trip.model_dump_json() if search else None,
+            f"{len(search.places)}/{search.total}" if search else None,
+            search.error if search else None,
         )
-        return ChatResponse(
-            reply=result.reply,
-            ready=result.trip_context is not None,
-            trip_context=result.trip_context,
-        )
+        return ChatResponse(reply=result.reply, search=search)
     except BettyError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -85,11 +84,11 @@ def summarize(request: SummarizeRequest, betty: BettyDep) -> SummarizeResponse:
     """Condense the conversation into a single-paragraph trip summary."""
     try:
         logger.info(
-            "POST /summarize: %d messages, trip_context=%s",
+            "POST /summarize: %d messages, trip=%s",
             len(request.messages),
-            request.trip_context is not None,
+            request.trip.model_dump_json() if request.trip else None,
         )
-        summary = betty.summarize(request.messages, request.trip_context)
+        summary = betty.summarize(request.messages, request.trip)
         logger.info("summarize done: %r", summary)
         return SummarizeResponse(summary=summary)
     except BettyError as exc:

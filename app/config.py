@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     betty_model: str = Field(default="nemotron-3.5", description="Chat model name.")
     betty_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     betty_max_tokens: int = Field(default=1024, gt=0)
-    betty_places_tool: bool = Field(default=True, description="Let Betty search OpenStreetMap.")
+    betty_places_tool: bool = Field(
+        default=True, description="Run the OpenStreetMap search inside search_places."
+    )
     betty_max_tool_rounds: int = Field(default=3, gt=0)
     log_level: str = Field(default="INFO", description="DEBUG, INFO, WARNING, ...")
     request_timeout_seconds: float = Field(default=60.0, gt=0)

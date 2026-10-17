@@ -16,7 +16,7 @@ CHAT_HEIGHT = 560
 # Debug functions: key -> (title, endpoint)
 FUNCTIONS = {
     "summarize": ("Summarize", "/api/v1/summarize"),
-    "check": ("Readiness check", "/api/v1/chat"),
+    "check": ("Search check", "/api/v1/chat"),
 }
 
 st.set_page_config(
@@ -30,7 +30,7 @@ api_url: str = st.sidebar.text_input("API URL", DEFAULT_API_URL).rstrip("/")
 
 for key, default in (
     ("messages", []),
-    ("trip_context", None),
+    ("search", None),
     ("debug_output", {}),
 ):
     if key not in st.session_state:
@@ -55,8 +55,8 @@ def history_request_body(tool: str) -> dict[str, Any]:
     messages = list(st.session_state.messages)
     body: dict[str, Any] = {"messages": messages}
     if tool == "summarize":
-        if st.session_state.trip_context:
-            body["trip_context"] = st.session_state.trip_context
+        if st.session_state.search:
+            body["trip"] = st.session_state.search["trip"]
     else:
         # /chat needs the last message to come from the user, so re-check the latest user turn.
         while messages and messages[-1]["role"] == "assistant":
@@ -121,6 +121,41 @@ def run_function(tool: str, body: dict[str, Any] | None) -> None:
     st.session_state.debug_output[tool] = {"request": body, "response": response}
 
 
+def render_search(search: dict[str, Any] | None) -> None:
+    """Show a `search` object from /chat: status, the summary sent to find_places, places."""
+    if not search:
+        return
+    places = search.get("places") or []
+    if search.get("error"):
+        st.warning(f"Enough information, but the search failed: {search['error']}")
+    else:
+        st.success(f"✅ Enough information: showing {len(places)} of {search['total']} places")
+    with st.expander("Search details"):
+        st.markdown("**Summary sent to find_places**")
+        st.info(search["summary"])
+        if places:
+            st.dataframe(
+                [
+                    {
+                        "name": p.get("name"),
+                        "kind": next(
+                            (
+                                p["tags"][k]
+                                for k in ("amenity", "tourism", "historic", "leisure")
+                                if k in p.get("tags", {})
+                            ),
+                            "",
+                        ),
+                        "wikipedia": ", ".join(p.get("wikipedia") or {}),
+                    }
+                    for p in places
+                ],
+                hide_index=True,
+            )
+        st.markdown("**Trip**")
+        st.json(search["trip"])
+
+
 def render_output(tool: str) -> None:
     result = st.session_state.debug_output.get(tool)
     if result is None or result["response"] is None:
@@ -129,10 +164,10 @@ def render_output(tool: str) -> None:
     if tool == "summarize":
         st.info(response.get("summary", ""))
     else:
-        if response.get("ready"):
-            st.success("ready = true: enough information gathered")
+        if response.get("search"):
+            render_search(response["search"])
         else:
-            st.warning("ready = false: Betty needs more information")
+            st.warning("No search this turn: Betty needs more information")
         st.write(f"**Betty's reply:** {response.get('reply', '')}")
     with st.expander("Request sent"):
         st.json(result["request"])
@@ -142,7 +177,7 @@ def render_output(tool: str) -> None:
 
 if st.sidebar.button("Reset conversation"):
     st.session_state.messages = []
-    st.session_state.trip_context = None
+    st.session_state.search = None
     st.session_state.debug_output = {}
     st.rerun()
 
@@ -170,8 +205,8 @@ if prompt:
         with st.chat_message("assistant"), st.spinner("Betty is typing..."):
             data = post("/api/v1/chat", {"messages": st.session_state.messages})
     if data:
-        if data.get("ready"):
-            st.session_state.trip_context = data["trip_context"]
+        if data.get("search"):
+            st.session_state.search = data["search"]
         st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
         st.rerun()  # redraw so the header's copy button and the right side see the new turn
     st.session_state.messages.pop()  # drop the unanswered turn so the user can retry
@@ -183,10 +218,7 @@ with header:
         copy_button(json.dumps(st.session_state.messages, indent=2, ensure_ascii=False))
 
 with status_box:
-    if st.session_state.trip_context:
-        st.success("✅ Ready to plan: Betty has enough information.")
-        with st.expander("Collected trip context"):
-            st.json(st.session_state.trip_context)
+    render_search(st.session_state.search)
 
 # ---- right: functions
 with right:
@@ -194,7 +226,8 @@ with right:
     st.caption(
         'Input: request JSON `{"messages": [{"role": "user"|"assistant", '
         '"content": "..."}]}`, or plain text (sent as one user message). '
-        "The readiness check calls `/api/v1/chat`; with chat history it uses the latest user turn."
+        "Search check calls `/api/v1/chat` (one Betty turn); with chat history it uses the latest "
+        "user turn. Summarize with chat history also sends the last search's `trip`."
     )
     columns = st.columns(len(FUNCTIONS), gap="medium")
     for column, (tool, (title, path)) in zip(columns, FUNCTIONS.items(), strict=True):

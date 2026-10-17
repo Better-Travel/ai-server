@@ -1,8 +1,8 @@
 # Big City Life — Betty AI server
 
-FastAPI service for **Betty**, a friendly local-guide assistant that gathers trip details
-and produces a one-paragraph summary for itinerary generation. Uses the OpenAI SDK against
-NVIDIA's Integrate API.
+FastAPI service for **Betty**, a friendly local-guide assistant that gathers trip details and
+finds real places for the trip in OpenStreetMap. Uses the OpenAI SDK against NVIDIA's Integrate
+API.
 
 ## Setup
 
@@ -22,16 +22,16 @@ With the API running, in a second terminal:
 uv run streamlit run ui/streamlit_app.py
 ```
 
-Chat with Betty and click **Summarize trip** in the sidebar. The API URL defaults to
-`http://localhost:8000` (override with `BETTY_API_URL` or the sidebar field).
+The API URL defaults to `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar
+field).
 
 The page has two columns. **Left:** the chat with Betty, with a small **Copy** button next to her
-name that copies the history as JSON. **Right:** the two API functions side by side (Summarize,
-Readiness check). Each has an input box (request JSON, a bare message list, or plain text sent as
+name that copies the history as JSON, and the last search (summary sent to `find_places`, places,
+trip) under the chat. **Right:** the two API functions side by side (Summarize, Search check). Each has an input box (request JSON, a bare message list, or plain text sent as
 one user message) and two buttons: **Run with input** and **Run with chat history**, which uses the
 live conversation. The output appears under each function, with the request sent and the raw
-response. (The readiness check calls `/api/v1/chat`, so with chat history it re-checks the latest
-user turn.)
+response. (Search check calls `/api/v1/chat`, so with chat history it re-runs the latest user turn;
+Summarize with chat history also sends the last search's `trip`.)
 
 ## Logging
 
@@ -40,46 +40,59 @@ text and tool call, tool results, the generated Overpass queries, and the final 
 `LOG_LEVEL=DEBUG` also logs the full request payload sent to the model. Logs include user text,
 so keep them local.
 
-## Place search tool (OpenStreetMap)
+## How Betty finds places
 
-During `/api/v1/chat`, Betty can call a `find_places` tool to look up real restaurants, cafes,
-museums, etc. The tool takes one plain-text `request`: a short summary of what the traveller
-wants to do, including the destination city and country. `osm/` is a pipeline: an LLM turns that
-text into an Overpass QL query (tags are limited to the catalog in `osm/schemas.py`),
-deterministic code runs it, and if Overpass rejects the syntax the error is sent back to the model
-to fix it. If the text doesn't say where, the model replies `NO_QUERY: ...` and Betty is told what
-is missing, so she can ask the traveller (`osm/pipeline.py`). Betty only sees a trimmed result list
-(max 20).
+```
+traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history, trip) --> find_places(summary)
+                ^                                                                               |
+                +----------------------------- places (max 20) --------------------------------+
+```
 
-- Needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`) for the query-writing model;
-  `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` disables the tool.
+1. **`search_places`** (`app/services/search_places_tool.py`) is Betty's only tool, and calling it
+   is her "I have enough information" signal. She passes only the confirmed minimum, validated by
+   `Trip` in `app/schemas.py`: one **city or district** with its ISO country code, and the
+   **timing** (dates or a number of days). Regions/countries, past dates and durations that
+   contradict the dates are rejected, and the problems go back to Betty so she asks the
+   traveller. The goal is that every search covers one bounded area.
+2. **Summary** (`BettyService.summarize`): the server summarises the whole conversation. The
+   first sentence is built by code from the validated trip (`Trip.describe()`), so destination
+   and dates can't drift; the model only adds what the traveller stated (interests, companions,
+   budget, free hours, needs). Plain English, one paragraph, unknowns left out. If the summary
+   call fails, the trip sentence alone is used.
+3. **`find_places`** (`app/services/place_finder.py` + `osm/`) takes that plain text: an LLM
+   turns it into an Overpass QL query (tags limited to the catalog in `osm/schemas.py`),
+   deterministic code runs it and sends syntax errors back to the model to fix. If the text
+   doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). Results are trimmed to 20.
+4. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`) and suggests only
+   returned places.
+
+- The query-writing model needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`);
+  `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` skips the OSM search (the trip is still
+  validated and summarised).
 - Places whose OSM `wikipedia=lang:Title` tag is set are looked up on Wikipedia by that exact
   title (`osm/wikipedia.py`, batched per language, redirects followed, disambiguation and missing
   pages skipped). Each gets a short summary + URL in **Polish and English** (`wikipedia.pl` / `wikipedia.en`;
   the other language comes from Wikipedia's language links, and is absent if no translation exists). Lookup failures are
   ignored; the place is returned without it. No API key needed.
-- Try the pipeline alone: `uv run python -m osm sample_request.txt` or
+- Try `find_places` alone: `uv run python -m osm sample_request.txt` or
   `uv run python -m osm "Coffee and castles in Kraków, Poland"`
-
-## Readiness: when is the info "enough"?
-
-Betty calls the `finalize_trip_context` tool once the hard minimum is met: a destination
-narrowed to **one city or district** (not a region/country) and **timing** (dates or a number
-of days). Everything else (interests, free hours, companions, budget, notes) is optional.
-The tool arguments are validated by `TripContext` in `app/schemas.py`; a rejected call returns
-the problems to the model so it asks the traveller for what is missing. The goal is that a later
-OpenStreetMap query for this context returns a bounded amount of data. `/api/v1/chat` then
-responds with `"ready": true` and the structured `trip_context`.
 
 ## Endpoints
 
-- `POST /api/v1/chat` — `{"messages": [{"role": "user", "content": "..."}]}` → `{"reply": "...", "ready": false, "trip_context": null}`
-  (stateless: send the full history each call)
-- `POST /api/v1/summarize` — same body (optionally plus the `trip_context` from `/chat`) → `{"summary": "<single paragraph>"}`
+The server is stateless: send the full history on each call.
+
+- `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}]}` →
+  `{"reply": "...", "search": null | {...}}`. `search` is set only on a turn where Betty had enough
+  information and searched:
+  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{name, type, lat, lon, tags, wikipedia}], "error": null}`.
+  `error` is set when the trip was accepted but the search failed. Keep the last `search` on the
+  client; Betty searches again when the trip changes.
+- `POST /api/v1/summarize`: `{"messages": [...], "trip": {...}?}` → `{"summary": "..."}`. The same
+  function `search_places` uses; with `trip` the first sentence is `Trip.describe()`.
 - `GET /health`
 
 ## Checks
 
 ```bash
-uv run ruff format --check . && uv run ruff check . && uv run mypy app tests ui && uv run pytest
+uv run ruff format --check . && uv run ruff check . && uv run mypy app tests ui osm && uv run pytest
 ```

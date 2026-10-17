@@ -21,15 +21,28 @@ class FakeResponse:
         return self._data
 
 
+TRIP = {"city": "Warsaw", "country": "PL", "scope": "city", "duration_days": 3}
+SEARCH = {
+    "trip": TRIP,
+    "summary": "Destination: Warsaw, country PL. Dates: 3 days.",
+    "total": 1,
+    "places": [{"name": "Cafe A", "type": "node", "tags": {"amenity": "cafe"}}],
+    "error": None,
+}
+searching = False
+
+
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+    global searching
+    searching = False
     recorded: list[tuple[str, dict[str, Any]]] = []
 
     def fake_post(url: str, json: dict[str, Any], timeout: float) -> FakeResponse:
         recorded.append((url, json))
         if url.endswith("/summarize"):
             return FakeResponse({"summary": "A tidy paragraph."})
-        return FakeResponse({"reply": "Lovely!", "ready": False, "trip_context": None})
+        return FakeResponse({"reply": "Lovely!", "search": SEARCH if searching else None})
 
     monkeypatch.setattr(httpx, "post", fake_post)
     return recorded
@@ -74,7 +87,7 @@ def test_check_with_chat_history_ends_on_user_turn(
     url, body = calls[-1]
     assert url.endswith("/api/v1/chat")
     assert body["messages"] == [{"role": "user", "content": "Warsaw in May"}]
-    assert any("ready = false" in w.value for w in at.warning)
+    assert any("No search this turn" in w.value for w in at.warning)
 
 
 def test_run_with_plain_text_input(calls: list[tuple[str, dict[str, Any]]]) -> None:
@@ -92,3 +105,15 @@ def test_run_with_json_input(calls: list[tuple[str, dict[str, Any]]]) -> None:
     at.text_area(key="input_summarize").set_value(raw).run()
     button(at, "run_input_summarize").click().run()
     assert calls[-1][1] == {"messages": [{"role": "user", "content": "hi"}]}
+
+
+def test_search_is_shown_and_its_trip_is_sent_to_summarize(
+    calls: list[tuple[str, dict[str, Any]]],
+) -> None:
+    global searching
+    searching = True
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    chat_once(at)
+    assert any("showing 1 of 1 places" in s.value for s in at.success)
+    button(at, "run_history_summarize").click().run()
+    assert calls[-1][1]["trip"] == TRIP
