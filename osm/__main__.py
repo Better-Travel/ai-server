@@ -1,19 +1,23 @@
-"""CLI smoke test: `python -m osm places.json` generates and runs a query."""
+"""CLI smoke test: `python -m osm "<text or path>"` builds a query from plain text and runs it."""
 
 import sys
 from pathlib import Path
 
 from osm.llm import FallbackClient, make_clients
-from osm.pipeline import generate_and_run
+from osm.pipeline import NeedsMoreInfo, generate_and_run
 from osm.runner import OverpassUnavailable
-from osm.schemas import PlacesInput
 from osm.wikipedia import enrich
 
 
-def main(path: str) -> None:
-    places = PlacesInput.model_validate_json(Path(path).read_text())
+def main(arg: str) -> None:
     try:
-        result = generate_and_run(places, FallbackClient(make_clients()).complete)
+        request = Path(arg).read_text() if Path(arg).is_file() else arg
+    except OSError:  # e.g. a long text that is not a valid file name
+        request = arg
+    try:
+        result = generate_and_run(request, FallbackClient(make_clients()).complete)
+    except NeedsMoreInfo as exc:
+        sys.exit(f"Need more information: {exc}")
     except OverpassUnavailable as exc:
         sys.exit(f"Overpass server problem (not an empty result): {exc}")
     result.results = enrich(result.results)
@@ -23,5 +27,5 @@ def main(path: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        sys.exit("usage: python -m osm places.json")
+        sys.exit('usage: python -m osm "<text>" | <file.txt>')
     main(sys.argv[1])

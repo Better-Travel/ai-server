@@ -10,18 +10,7 @@ from app.services.places_tool import PlacesTool
 from osm.schemas import OverpassElement
 from osm.wikipedia import enrich, fetch_summaries, parse_wikipedia_tag
 
-ARGS = json.dumps(
-    {
-        "places": [
-            {
-                "category": "attractions",
-                "filters": [{"key": "tourism", "values": ["attraction"]}],
-                "area": "Warszawa",
-                "country": "PL",
-            }
-        ]
-    }
-)
+ARGS = json.dumps({"request": "Visiting Warszawa, Poland: sights and cafes."})
 
 
 class FakeWikipedia:
@@ -230,7 +219,7 @@ def test_places_tool_returns_both_languages_trimmed(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(
         "app.services.places_tool.generate_and_run",
-        lambda places, complete: SimpleNamespace(results=[element]),
+        lambda request, complete: SimpleNamespace(results=[element]),
     )
     monkeypatch.setattr("app.services.places_tool.enrich", lambda els: enrich(els, wiki.client()))
 

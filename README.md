@@ -28,10 +28,13 @@ Chat with Betty and click **Summarize trip** in the sidebar. The API URL default
 ## Place search tool (OpenStreetMap)
 
 During `/api/v1/chat`, Betty can call a `find_places` tool to look up real restaurants, cafes,
-museums, etc. The tool takes a `PlacesInput` (see `osm/schemas.py`: category, tag filters,
-`area` + `country`). `osm/` is a pipeline: an LLM writes an Overpass QL query, deterministic code
-runs it, and if Overpass rejects the syntax the error is sent back to the model to fix
-(`osm/pipeline.py`). Betty only sees a trimmed result list (max 20).
+museums, etc. The tool takes one plain-text `request`: a short summary of what the traveller
+wants to do, including the destination city and country. `osm/` is a pipeline: an LLM turns that
+text into an Overpass QL query (tags are limited to the catalog in `osm/schemas.py`),
+deterministic code runs it, and if Overpass rejects the syntax the error is sent back to the model
+to fix it. If the text doesn't say where, the model replies `NO_QUERY: ...` and Betty is told what
+is missing, so she can ask the traveller (`osm/pipeline.py`). Betty only sees a trimmed result list
+(max 20).
 
 - Needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`) for the query-writing model;
   `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` disables the tool.
@@ -40,7 +43,8 @@ runs it, and if Overpass rejects the syntax the error is sent back to the model 
   pages skipped). Each gets a short summary + URL in **Polish and English** (`wikipedia.pl` / `wikipedia.en`;
   the other language comes from Wikipedia's language links, and is absent if no translation exists). Lookup failures are
   ignored; the place is returned without it. No API key needed.
-- Try the pipeline alone: `uv run python -m osm sample_places.json`
+- Try the pipeline alone: `uv run python -m osm sample_request.txt` or
+  `uv run python -m osm "Coffee and castles in Kraków, Poland"`
 
 ## Endpoints
 

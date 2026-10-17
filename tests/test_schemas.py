@@ -1,68 +1,20 @@
-from typing import Any
-
-import pytest
-from pydantic import ValidationError
-
-from osm.schemas import PlacesInput
+from osm.prompt import build_system_prompt, build_user_prompt
+from osm.schemas import ALLOWED_TAGS
 
 
-def _place(key: str, values: list[str]) -> dict[str, Any]:
-    return {
-        "places": [
-            {
-                "category": "food_drink",
-                "filters": [{"key": key, "values": values}],
-                "area": "Paris",
-                "country": "FR",
-            }
-        ]
-    }
+def test_allowed_tags_cover_food_sights_and_entertainment() -> None:
+    assert {"restaurant", "cafe", "bar", "pub"} <= ALLOWED_TAGS["amenity"]
+    assert {"museum", "attraction", "viewpoint"} <= ALLOWED_TAGS["tourism"]
+    assert {"castle", "palace"} <= ALLOWED_TAGS["historic"]
+    assert {"cinema", "theatre", "nightclub"} <= ALLOWED_TAGS["amenity"]
 
 
-def test_valid_input() -> None:
-    assert PlacesInput.model_validate(_place("amenity", ["cafe"]))
+def test_system_prompt_lists_tags_and_rules() -> None:
+    prompt = build_system_prompt()
+    assert "restaurant" in prompt and "NO_QUERY:" in prompt
+    assert "ALTERNATIVE" in prompt  # separate nwr per key, never chained
+    assert "ISO 3166-1" in prompt
 
 
-def test_value_not_valid_for_key() -> None:
-    with pytest.raises(ValidationError):
-        PlacesInput.model_validate(_place("tourism", ["cafe"]))
-
-
-def test_unknown_key() -> None:
-    with pytest.raises(ValidationError):
-        PlacesInput.model_validate(_place("building", ["house"]))
-
-
-def test_bbox_area() -> None:
-    data = _place("amenity", ["bar"])
-    data["places"][0]["area"] = {"south": 1, "west": 2, "north": 3, "east": 4}
-    assert PlacesInput.model_validate(data)
-
-
-def test_named_area_requires_country() -> None:
-    data = _place("amenity", ["bar"])
-    del data["places"][0]["country"]
-    with pytest.raises(ValidationError):
-        PlacesInput.model_validate(data)
-
-
-def test_country_is_normalised_and_validated() -> None:
-    data = _place("amenity", ["bar"])
-    data["places"][0]["country"] = " pl "
-    assert PlacesInput.model_validate(data).places[0].country == "PL"
-    data["places"][0]["country"] = "Poland"
-    with pytest.raises(ValidationError):
-        PlacesInput.model_validate(data)
-
-
-def test_bbox_does_not_need_country() -> None:
-    data = _place("amenity", ["bar"])
-    del data["places"][0]["country"]
-    data["places"][0]["area"] = {"south": 1, "west": 2, "north": 3, "east": 4}
-    assert PlacesInput.model_validate(data)
-
-
-def test_prompt_says_filters_are_alternatives() -> None:
-    from osm.prompt import build_system_prompt
-
-    assert "ALTERNATIVE" in build_system_prompt()
+def test_user_prompt_contains_the_text() -> None:
+    assert "castles in Krakow" in build_user_prompt("  castles in Krakow, Poland  ")

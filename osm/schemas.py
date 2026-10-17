@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 
 class TourismValue(StrEnum):
@@ -86,8 +86,6 @@ class ShopValue(StrEnum):
     WINE = "wine"
 
 
-OsmKey = Literal["tourism", "historic", "amenity", "leisure", "natural", "man_made", "shop"]
-
 ALLOWED_TAGS: dict[str, set[str]] = {
     "tourism": {v.value for v in TourismValue},
     "historic": {v.value for v in HistoricValue},
@@ -97,62 +95,6 @@ ALLOWED_TAGS: dict[str, set[str]] = {
     "man_made": {v.value for v in ManMadeValue},
     "shop": {v.value for v in ShopValue},
 }
-
-
-class Category(StrEnum):
-    ATTRACTIONS = "attractions"
-    FOOD_DRINK = "food_drink"
-    ENTERTAINMENT = "entertainment"
-
-
-class TagFilter(BaseModel):
-    key: OsmKey
-    values: list[str] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _values_belong_to_key(self) -> "TagFilter":
-        unknown = set(self.values) - ALLOWED_TAGS[self.key]
-        if unknown:
-            raise ValueError(f"unknown values for {self.key!r}: {sorted(unknown)}")
-        return self
-
-
-class BBox(BaseModel):
-    south: float = Field(ge=-90, le=90)
-    west: float = Field(ge=-180, le=180)
-    north: float = Field(ge=-90, le=90)
-    east: float = Field(ge=-180, le=180)
-
-
-class PlaceRequest(BaseModel):
-    category: Category
-    filters: list[TagFilter] = Field(min_length=1)
-    area: str | BBox
-    country: str | None = Field(default=None, description="ISO 3166-1 alpha-2 code, e.g. PT")
-    name: str | None = None
-    require_name: bool = True
-
-    @field_validator("country")
-    @classmethod
-    def _country_is_alpha2(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = value.strip().upper()
-        if len(value) != 2 or not value.isalpha():
-            raise ValueError("country must be an ISO 3166-1 alpha-2 code such as 'PT'")
-        return value
-
-    @model_validator(mode="after")
-    def _named_area_needs_country(self) -> "PlaceRequest":
-        if isinstance(self.area, str) and self.country is None:
-            raise ValueError(
-                "country is required when area is a place name (names like 'Lisbon' are ambiguous)"
-            )
-        return self
-
-
-class PlacesInput(BaseModel):
-    places: list[PlaceRequest] = Field(min_length=1)
 
 
 class WikipediaText(BaseModel):
