@@ -1,4 +1,4 @@
-"""Streamlit chat UI for trying Betty locally against the FastAPI server, with debug tools."""
+"""Streamlit UI for trying Betty locally: chat on the left, function debugger on the right."""
 
 import json
 import os
@@ -12,20 +12,24 @@ GREETING = (
     "Hi, I'm Betty, your local guide! Tell me where you'd like to go "
     "and I'll help shape the perfect trip."
 )
-# Debug tools: name -> (endpoint, label of the run button)
-DEBUG_TOOLS = {
-    "summarize": ("/api/v1/summarize", "Run summarize"),
-    "check": ("/api/v1/chat", "Run readiness check"),
+CHAT_HEIGHT = 560
+# Debug functions: key -> (title, endpoint)
+FUNCTIONS = {
+    "summarize": ("Summarize", "/api/v1/summarize"),
+    "check": ("Readiness check", "/api/v1/chat"),
 }
 
-st.set_page_config(page_title="Betty Trip Planner", page_icon="🧭", layout="wide")
-st.title("🧭 Betty, your local guide")
+st.set_page_config(
+    page_title="Betty Trip Planner",
+    page_icon="🧭",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
 api_url: str = st.sidebar.text_input("API URL", DEFAULT_API_URL).rstrip("/")
 
 for key, default in (
     ("messages", []),
-    ("summary", None),
     ("trip_context", None),
     ("debug_output", {}),
 ):
@@ -46,23 +50,22 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def current_request_body() -> dict[str, Any]:
-    """The current chat in the exact shape the API expects."""
-    body: dict[str, Any] = {"messages": st.session_state.messages}
-    if st.session_state.trip_context:
-        body["trip_context"] = st.session_state.trip_context
+def history_request_body(tool: str) -> dict[str, Any]:
+    """The current chat in the exact shape the function's endpoint expects."""
+    messages = list(st.session_state.messages)
+    body: dict[str, Any] = {"messages": messages}
+    if tool == "summarize":
+        if st.session_state.trip_context:
+            body["trip_context"] = st.session_state.trip_context
+    else:
+        # /chat needs the last message to come from the user, so re-check the latest user turn.
+        while messages and messages[-1]["role"] == "assistant":
+            messages.pop()
     return body
 
 
-def load_current_chat(tool: str) -> None:
-    """Button callback: fill a debug input with the current chat."""
-    st.session_state[f"debug_input_{tool}"] = json.dumps(
-        current_request_body(), indent=2, ensure_ascii=False
-    )
-
-
-def parse_debug_input(text: str) -> dict[str, Any] | None:
-    """Accept request JSON, or plain text which is sent as a single user message."""
+def parse_input(text: str) -> dict[str, Any] | None:
+    """Accept request JSON, a bare message list, or plain text (sent as one user message)."""
     text = text.strip()
     if not text:
         st.warning("Input is empty.")
@@ -71,96 +74,143 @@ def parse_debug_input(text: str) -> dict[str, Any] | None:
         parsed = json.loads(text)
     except json.JSONDecodeError:
         return {"messages": [{"role": "user", "content": text}]}
-    if isinstance(parsed, list):  # a bare list of messages
+    if isinstance(parsed, list):
         return {"messages": parsed}
     if isinstance(parsed, dict):
         return parsed
     return {"messages": [{"role": "user", "content": text}]}
 
 
-# ---- sidebar actions
-if st.sidebar.button("Summarize trip", disabled=not st.session_state.messages):
-    with st.spinner("Betty is writing the summary..."):
-        data = post("/api/v1/summarize", current_request_body())
-    st.session_state.summary = data["summary"] if data else None
+def copy_button(text: str) -> None:
+    """Small button that copies `text` to the clipboard (Streamlit has no native one)."""
+    # The history contains user/LLM text and the iframe has same-origin access, so escape
+    # everything that could terminate the script or open a tag.
+    payload = (
+        json.dumps(text).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    )
+    st.iframe(
+        f"""
+        <button id="b" title="Copy chat history as JSON" style="cursor:pointer;
+          border:1px solid rgba(128,128,128,.5); background:transparent; color:#888;
+          border-radius:6px; padding:3px 10px; font:13px sans-serif;">📋 Copy</button>
+        <script>
+        const text = {payload};
+        const b = document.getElementById("b");
+        b.onclick = async () => {{
+          try {{ await navigator.clipboard.writeText(text); }}
+          catch (e) {{
+            const t = document.createElement("textarea"); t.value = text;
+            document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+          }}
+          b.textContent = "✓ Copied";
+          setTimeout(() => (b.textContent = "📋 Copy"), 1500);
+        }};
+        </script>
+        """,
+        height=40,
+    )
+
+
+def run_function(tool: str, body: dict[str, Any] | None) -> None:
+    """Call the function's endpoint and remember request + response for display."""
+    if body is None:
+        return
+    _, path = FUNCTIONS[tool]
+    with st.spinner(f"Calling {path}..."):
+        response = post(path, body)
+    st.session_state.debug_output[tool] = {"request": body, "response": response}
+
+
+def render_output(tool: str) -> None:
+    result = st.session_state.debug_output.get(tool)
+    if result is None or result["response"] is None:
+        return
+    response = result["response"]
+    if tool == "summarize":
+        st.info(response.get("summary", ""))
+    else:
+        if response.get("ready"):
+            st.success("ready = true: enough information gathered")
+        else:
+            st.warning("ready = false: Betty needs more information")
+        st.write(f"**Betty's reply:** {response.get('reply', '')}")
+    with st.expander("Request sent"):
+        st.json(result["request"])
+    with st.expander("Raw response"):
+        st.json(response)
+
 
 if st.sidebar.button("Reset conversation"):
     st.session_state.messages = []
-    st.session_state.summary = None
     st.session_state.trip_context = None
+    st.session_state.debug_output = {}
     st.rerun()
 
-# ---- chat
-with st.chat_message("assistant"):
-    st.write(GREETING)
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
+left, right = st.columns(2, gap="large")
 
-if prompt := st.chat_input("Where would you like to go?"):
+# ---- left: chat
+with left:
+    header = st.container()
+    messages_box = st.container(height=CHAT_HEIGHT)
+    status_box = st.container()
+    prompt = st.chat_input("Where would you like to go?")
+
+with messages_box:
+    with st.chat_message("assistant"):
+        st.write(GREETING)
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.summary = None
-    with st.chat_message("user"):
-        st.write(prompt)
-    with st.chat_message("assistant"), st.spinner("Betty is typing..."):
-        data = post("/api/v1/chat", {"messages": st.session_state.messages})
-        if data:
-            st.write(data["reply"])
-            if data.get("ready"):
-                st.session_state.trip_context = data["trip_context"]
-            st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
-        else:
-            st.session_state.messages.pop()  # drop the unanswered turn so the user can retry
+    with messages_box:
+        with st.chat_message("user"):
+            st.write(prompt)
+        with st.chat_message("assistant"), st.spinner("Betty is typing..."):
+            data = post("/api/v1/chat", {"messages": st.session_state.messages})
+    if data:
+        if data.get("ready"):
+            st.session_state.trip_context = data["trip_context"]
+        st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
+        st.rerun()  # redraw so the header's copy button and the right side see the new turn
+    st.session_state.messages.pop()  # drop the unanswered turn so the user can retry
 
-if st.session_state.trip_context:
-    st.divider()
-    st.success("✅ Ready to plan: Betty has enough information.")
-    with st.expander("Collected trip context"):
-        st.json(st.session_state.trip_context)
+with header:
+    title_col, copy_col = st.columns([1, 2.5], vertical_alignment="center")
+    title_col.subheader("🧭 Betty")
+    with copy_col:
+        copy_button(json.dumps(st.session_state.messages, indent=2, ensure_ascii=False))
 
-if st.session_state.summary:
-    st.divider()
-    st.subheader("Trip summary")
-    st.info(st.session_state.summary)
+with status_box:
+    if st.session_state.trip_context:
+        st.success("✅ Ready to plan: Betty has enough information.")
+        with st.expander("Collected trip context"):
+            st.json(st.session_state.trip_context)
 
-# ---- debug tools
-st.divider()
-st.subheader("🔧 Debug tools")
-
-history_json = json.dumps(st.session_state.messages, indent=2, ensure_ascii=False)
-with st.expander("📋 Chat history (use the copy icon at the top right of the box)"):
-    st.code(history_json, language="json")
-
-st.caption(
-    'Each tool takes request JSON (`{"messages": [{"role": "user"|"assistant", '
-    '"content": "..."}], "trip_context": {...}}`). Plain text is sent as one user message. '
-    "The readiness check calls `/api/v1/chat`, so the last message must come from the user."
-)
-tabs = st.tabs(["Summarize", "Readiness check"])
-for tab, (tool, (path, run_label)) in zip(tabs, DEBUG_TOOLS.items(), strict=True):
-    with tab:
-        st.text_area(
-            f"Input for {path}", key=f"debug_input_{tool}", height=220, placeholder="Paste or type"
-        )
-        run_col, load_col = st.columns(2)
-        run = run_col.button(run_label, key=f"run_{tool}", type="primary")
-        load_col.button(
-            "Load current chat", key=f"load_{tool}", on_click=load_current_chat, args=(tool,)
-        )
-        if run:
-            body = parse_debug_input(st.session_state[f"debug_input_{tool}"])
-            if body is not None:
-                with st.spinner(f"Calling {path}..."):
-                    st.session_state.debug_output[tool] = post(path, body)
-        output = st.session_state.debug_output.get(tool)
-        if output is not None:
-            if tool == "summarize":
-                st.info(output.get("summary", ""))
-            else:
-                if output.get("ready"):
-                    st.success("ready = true: enough information gathered")
-                else:
-                    st.warning("ready = false: Betty needs more information")
-                st.write(f"**Betty's reply:** {output.get('reply', '')}")
-            with st.expander("Raw response"):
-                st.json(output)
+# ---- right: functions
+with right:
+    st.subheader("🔧 Functions")
+    st.caption(
+        'Input: request JSON `{"messages": [{"role": "user"|"assistant", '
+        '"content": "..."}]}`, or plain text (sent as one user message). '
+        "The readiness check calls `/api/v1/chat`; with chat history it uses the latest user turn."
+    )
+    columns = st.columns(len(FUNCTIONS), gap="medium")
+    for column, (tool, (title, path)) in zip(columns, FUNCTIONS.items(), strict=True):
+        with column:
+            st.markdown(f"**{title}**  \n`{path}`")
+            text = st.text_area(
+                f"Input for {title}", key=f"input_{tool}", height=200, label_visibility="collapsed"
+            )
+            if st.button("Run with input", key=f"run_input_{tool}", width="stretch"):
+                run_function(tool, parse_input(text))
+            if st.button(
+                "Run with chat history",
+                key=f"run_history_{tool}",
+                type="primary",
+                width="stretch",
+                disabled=not st.session_state.messages,
+            ):
+                run_function(tool, history_request_body(tool))
+            render_output(tool)

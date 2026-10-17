@@ -1,6 +1,5 @@
 """Smoke tests for the Streamlit app via Streamlit's headless AppTest (API calls mocked)."""
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -36,28 +35,60 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
     return recorded
 
 
-def test_debug_tools_load_chat_and_run(calls: list[tuple[str, dict[str, Any]]]) -> None:
-    at = AppTest.from_file(APP, default_timeout=30).run()
+def button(at: AppTest, key: str) -> Any:
+    return next(b for b in at.button if b.key == key)
+
+
+def chat_once(at: AppTest) -> None:
     at.chat_input[0].set_value("Warsaw in May").run()
     assert not at.exception
 
-    # "Load current chat" fills the textarea with the exact request shape.
-    next(b for b in at.button if b.key == "load_summarize").click().run()
-    loaded = json.loads(at.text_area(key="debug_input_summarize").value or "")
-    assert loaded["messages"][0] == {"role": "user", "content": "Warsaw in May"}
-    assert loaded["messages"][-1]["role"] == "assistant"
 
-    next(b for b in at.button if b.key == "run_summarize").click().run()
-    assert calls[-1][0].endswith("/api/v1/summarize")
-    assert calls[-1][1]["messages"] == loaded["messages"]
+def test_history_buttons_are_disabled_for_an_empty_chat(
+    calls: list[tuple[str, dict[str, Any]]],
+) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    assert button(at, "run_history_summarize").disabled
+    assert button(at, "run_history_check").disabled
+
+
+def test_summarize_with_chat_history(calls: list[tuple[str, dict[str, Any]]]) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    chat_once(at)
+    button(at, "run_history_summarize").click().run()
+    url, body = calls[-1]
+    assert url.endswith("/api/v1/summarize")
+    assert body["messages"] == [
+        {"role": "user", "content": "Warsaw in May"},
+        {"role": "assistant", "content": "Lovely!"},
+    ]
     assert any("A tidy paragraph." in i.value for i in at.info)
 
 
-def test_debug_plain_text_is_sent_as_user_message(calls: list[tuple[str, dict[str, Any]]]) -> None:
+def test_check_with_chat_history_ends_on_user_turn(
+    calls: list[tuple[str, dict[str, Any]]],
+) -> None:
     at = AppTest.from_file(APP, default_timeout=30).run()
-    at.text_area(key="debug_input_check").set_value("3 days in Warsaw").run()
-    next(b for b in at.button if b.key == "run_check").click().run()
+    chat_once(at)
+    button(at, "run_history_check").click().run()
+    url, body = calls[-1]
+    assert url.endswith("/api/v1/chat")
+    assert body["messages"] == [{"role": "user", "content": "Warsaw in May"}]
+    assert any("ready = false" in w.value for w in at.warning)
+
+
+def test_run_with_plain_text_input(calls: list[tuple[str, dict[str, Any]]]) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.text_area(key="input_check").set_value("3 days in Warsaw").run()
+    button(at, "run_input_check").click().run()
     url, body = calls[-1]
     assert url.endswith("/api/v1/chat")
     assert body == {"messages": [{"role": "user", "content": "3 days in Warsaw"}]}
-    assert any("ready = false" in w.value for w in at.warning)
+
+
+def test_run_with_json_input(calls: list[tuple[str, dict[str, Any]]]) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    raw = '{"messages": [{"role": "user", "content": "hi"}]}'
+    at.text_area(key="input_summarize").set_value(raw).run()
+    button(at, "run_input_summarize").click().run()
+    assert calls[-1][1] == {"messages": [{"role": "user", "content": "hi"}]}

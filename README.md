@@ -25,9 +25,13 @@ uv run streamlit run ui/streamlit_app.py
 Chat with Betty and click **Summarize trip** in the sidebar. The API URL defaults to
 `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar field).
 
-The page also has a **Debug tools** section: an expander with the chat history as JSON (copy icon on
-the box), and two tabs (Summarize, Readiness check) where you can type request JSON or plain text,
-click **Load current chat** to fill the box with the live conversation, run it, and see the output.
+The page has two columns. **Left:** the chat with Betty, with a small **Copy** button next to her
+name that copies the history as JSON. **Right:** the two API functions side by side (Summarize,
+Readiness check). Each has an input box (request JSON, a bare message list, or plain text sent as
+one user message) and two buttons: **Run with input** and **Run with chat history**, which uses the
+live conversation. The output appears under each function, with the request sent and the raw
+response. (The readiness check calls `/api/v1/chat`, so with chat history it re-checks the latest
+user turn.)
 
 ## Logging
 
