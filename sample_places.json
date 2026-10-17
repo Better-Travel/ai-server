@@ -1,0 +1,16 @@
+{
+  "places": [
+    {
+      "category": "food_drink",
+      "filters": [{"key": "amenity", "values": ["cafe", "restaurant"]}],
+      "area": "Warszawa",
+      "country": "PL"
+    },
+    {
+      "category": "attractions",
+      "filters": [{"key": "tourism", "values": ["museum", "viewpoint"]}],
+      "area": "Warszawa",
+      "country": "PL"
+    }
+  ]
+}
