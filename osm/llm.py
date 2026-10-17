@@ -1,4 +1,5 @@
 import os
+from typing import Any, cast
 
 from dotenv import load_dotenv
 from openai import APIStatusError, OpenAI
@@ -13,7 +14,11 @@ def model_name() -> str:
 
 def make_clients() -> list[OpenAI]:
     load_dotenv()
-    keys = [os.environ[name] for name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2") if os.environ.get(name)]
+    keys = [
+        os.environ[name]
+        for name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2")
+        if os.environ.get(name)
+    ]
     if not keys:
         raise RuntimeError("NVIDIA_API_KEY_1 is not set (expected in .env)")
     return [OpenAI(base_url=NVIDIA_BASE_URL, api_key=key) for key in keys]
@@ -25,12 +30,12 @@ class FallbackClient:
     def __init__(self, clients: list[OpenAI]):
         self._clients = clients
 
-    def complete(self, messages: list[dict]) -> str:
+    def complete(self, messages: list[dict[str, Any]]) -> str:
         last: Exception | None = None
         for client in self._clients:
             try:
                 response = client.chat.completions.create(
-                    model=model_name(), messages=messages, temperature=0
+                    model=model_name(), messages=cast(Any, messages), temperature=0
                 )
                 return response.choices[0].message.content or ""
             except APIStatusError as exc:

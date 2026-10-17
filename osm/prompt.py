@@ -11,8 +11,9 @@ Rules:
 - Scope a named area (`area` is a string) within its `country` (ISO 3166-1 alpha-2) like this:
   `area["ISO3166-1"="PT"][admin_level=2]->.c1; area["name"="Lisbon"](area.c1)->.a1;`
   then add `(area.a1)` to the `nwr` filter. Never match a name without the country restriction.
-- Define each distinct country and each distinct (area, country) pair only once, and reuse its set for every
-  place that shares it. Give different countries and areas different set names (`.c1`, `.c2`, `.a1`, `.a2`).
+- Define each distinct country and each distinct (area, country) pair only once, and reuse its set
+  for every place that shares it. Give different countries and areas different set names
+  (`.c1`, `.c2`, `.a1`, `.a2`).
   `{{geocodeArea:...}}` and `{{bbox}}` are Overpass Turbo macros and are NOT valid here.
 - Scope a bounding box with `(south,west,north,east)` on the `nwr` statement.
 - If `require_name` is true, add `["name"]`. If `name` is given, add a `["name"~"...",i]` filter.
@@ -26,7 +27,9 @@ Allowed tags:
 
 
 def build_system_prompt() -> str:
-    allowed = "\n".join(f"- {key}: {', '.join(sorted(values))}" for key, values in ALLOWED_TAGS.items())
+    allowed = "\n".join(
+        f"- {key}: {', '.join(sorted(values))}" for key, values in ALLOWED_TAGS.items()
+    )
     return SYSTEM_PROMPT.format(allowed=allowed)
 
 

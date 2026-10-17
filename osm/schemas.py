@@ -145,7 +145,9 @@ class PlaceRequest(BaseModel):
     @model_validator(mode="after")
     def _named_area_needs_country(self) -> "PlaceRequest":
         if isinstance(self.area, str) and self.country is None:
-            raise ValueError("country is required when area is a place name (names like 'Lisbon' are ambiguous)")
+            raise ValueError(
+                "country is required when area is a place name (names like 'Lisbon' are ambiguous)"
+            )
         return self
 
 

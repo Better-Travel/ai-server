@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Any
 
 import httpx
 
@@ -24,7 +25,7 @@ def _error_text(body: str) -> str:
     return "\n".join(lines) or body.strip()[:500]
 
 
-def _to_element(raw: dict) -> OverpassElement:
+def _to_element(raw: dict[str, Any]) -> OverpassElement:
     center = raw.get("center", {})
     tags = raw.get("tags", {})
     return OverpassElement(

@@ -25,6 +25,18 @@ uv run streamlit run ui/streamlit_app.py
 Chat with Betty and click **Summarize trip** in the sidebar. The API URL defaults to
 `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar field).
 
+## Place search tool (OpenStreetMap)
+
+During `/api/v1/chat`, Betty can call a `find_places` tool to look up real restaurants, cafes,
+museums, etc. The tool takes a `PlacesInput` (see `osm/schemas.py`: category, tag filters,
+`area` + `country`). `osm/` is a pipeline: an LLM writes an Overpass QL query, deterministic code
+runs it, and if Overpass rejects the syntax the error is sent back to the model to fix
+(`osm/pipeline.py`). Betty only sees a trimmed result list (max 20).
+
+- Needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`) for the query-writing model;
+  `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` disables the tool.
+- Try the pipeline alone: `uv run python -m osm sample_places.json`
+
 ## Endpoints
 
 - `POST /api/v1/chat` — `{"messages": [{"role": "user", "content": "..."}]}` → `{"reply": "..."}`

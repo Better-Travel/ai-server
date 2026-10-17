@@ -1,11 +1,13 @@
 import re
-from typing import Callable
+from collections.abc import Callable
+from typing import Any
 
 from .prompt import build_system_prompt, build_user_prompt
 from .runner import QuerySyntaxError, run_query
 from .schemas import OverpassElement, PipelineResult, PlacesInput
 
-Completer = Callable[[list[dict]], str]
+Message = dict[str, Any]
+Completer = Callable[[list[Message]], str]
 Runner = Callable[[str], list[OverpassElement]]
 
 _FENCE = re.compile(r"^```[a-zA-Z]*\s*\n?|\n?```\s*$")
@@ -46,6 +48,8 @@ def generate_and_run(
                 {"role": "assistant", "content": query},
                 {
                     "role": "user",
-                    "content": f"Overpass rejected this query:\n{exc}\nReturn a corrected query only.",
+                    "content": (
+                        f"Overpass rejected this query:\n{exc}\nReturn a corrected query only."
+                    ),
                 },
             ]
