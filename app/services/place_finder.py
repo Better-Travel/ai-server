@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Interim cap on places sent back to the LLM (and the client). Larger result sets are cropped to
 # the "best" ones by `select_diverse` and logged as a warning, until narrowing/ranking exists.
-MAX_RESULTS = 50
+MAX_RESULTS = 20
 MAX_EXTRACT_CHARS = 300
 MAX_REQUEST_CHARS = 2000
 KEPT_TAGS = ("amenity", "tourism", "historic", "leisure", "cuisine", "opening_hours", "website")

@@ -121,8 +121,8 @@ def test_large_results_are_cropped_with_a_warning(
     caplog.set_level("WARNING")
     found = finder()(REQUEST)
     assert found.total == MAX_RESULTS + 30
-    assert len(found.places) == MAX_RESULTS == 50
-    assert f"returned {MAX_RESULTS + 30} places; cropping to the 50 best" in caplog.text
+    assert len(found.places) == MAX_RESULTS == 20
+    assert f"returned {MAX_RESULTS + 30} places; cropping to the {MAX_RESULTS} best" in caplog.text
 
 
 def test_small_results_are_not_cropped_or_warned(
