@@ -50,6 +50,11 @@ runs it, and if Overpass rejects the syntax the error is sent back to the model 
 
 - Needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`) for the query-writing model;
   `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` disables the tool.
+- Places whose OSM `wikipedia=lang:Title` tag is set are looked up on Wikipedia by that exact
+  title (`osm/wikipedia.py`, batched per language, redirects followed, disambiguation and missing
+  pages skipped). Each gets a short summary + URL in **Polish and English** (`wikipedia.pl` / `wikipedia.en`;
+  the other language comes from Wikipedia's language links, and is absent if no translation exists). Lookup failures are
+  ignored; the place is returned without it. No API key needed.
 - Try the pipeline alone: `uv run python -m osm sample_places.json`
 
 ## Readiness: when is the info "enough"?

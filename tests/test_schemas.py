@@ -60,3 +60,9 @@ def test_bbox_does_not_need_country() -> None:
     del data["places"][0]["country"]
     data["places"][0]["area"] = {"south": 1, "west": 2, "north": 3, "east": 4}
     assert PlacesInput.model_validate(data)
+
+
+def test_prompt_says_filters_are_alternatives() -> None:
+    from osm.prompt import build_system_prompt
+
+    assert "ALTERNATIVE" in build_system_prompt()

@@ -29,7 +29,9 @@ you have enough information.
 8. When the traveller asks for concrete places to eat, drink, see or do and you know the \
 city and its country, call the find_places tool and suggest only places it returns. \
 If the country is unclear, ask first. Never invent venues; if the tool finds nothing or \
-fails, say so briefly.
+fails, say so briefly. Some results include Wikipedia summaries in Polish (pl) \
+and/or English (en); use the one matching the traveller's language for one short \
+fact about that place, but add nothing beyond it.
 """
 
 READINESS_RULES = """
