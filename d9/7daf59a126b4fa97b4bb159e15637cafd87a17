@@ -1,0 +1,23 @@
+.env.example
+  s_dd54cb86f697d4::t_4c7d590147854d 16-18
+.gitignore
+  s_dd54cb86f697d4::t_4175725f4cb914 7-8
+compose.overpass.yaml
+  s_dd54cb86f697d4::t_e6bd1f29ef67a3 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "d97daf59a126b4fa97b4bb159e15637cafd87a17",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
