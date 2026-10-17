@@ -37,11 +37,21 @@ runs it, and if Overpass rejects the syntax the error is sent back to the model 
   `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` disables the tool.
 - Try the pipeline alone: `uv run python -m osm sample_places.json`
 
+## Readiness: when is the info "enough"?
+
+Betty calls the `finalize_trip_context` tool once the hard minimum is met: a destination
+narrowed to **one city or district** (not a region/country) and **timing** (dates or a number
+of days). Everything else (interests, free hours, companions, budget, notes) is optional.
+The tool arguments are validated by `TripContext` in `app/schemas.py`; a rejected call returns
+the problems to the model so it asks the traveller for what is missing. The goal is that a later
+OpenStreetMap query for this context returns a bounded amount of data. `/api/v1/chat` then
+responds with `"ready": true` and the structured `trip_context`.
+
 ## Endpoints
 
-- `POST /api/v1/chat` — `{"messages": [{"role": "user", "content": "..."}]}` → `{"reply": "..."}`
+- `POST /api/v1/chat` — `{"messages": [{"role": "user", "content": "..."}]}` → `{"reply": "...", "ready": false, "trip_context": null}`
   (stateless: send the full history each call)
-- `POST /api/v1/summarize` — same body → `{"summary": "<single paragraph>"}`
+- `POST /api/v1/summarize` — same body (optionally plus the `trip_context` from `/chat`) → `{"summary": "<single paragraph>"}`
 - `GET /health`
 
 ## Checks

@@ -84,9 +84,13 @@ def test_betty_runs_tool_then_answers() -> None:
 
     reply = betty.chat([Message(role="user", content="cafes in Warsaw?")])
 
-    assert reply == "Try Cafe A!"
+    assert reply.reply == "Try Cafe A!"
+    assert reply.trip_context is None
     assert seen_args == [ARGS]
-    assert fake.calls[0]["tools"][0]["function"]["name"] == TOOL_NAME
+    assert [t["function"]["name"] for t in fake.calls[0]["tools"]] == [
+        TOOL_NAME,
+        "finalize_trip_context",
+    ]
     roles = [m["role"] for m in fake.calls[1]["messages"]]
     assert roles[-2:] == ["assistant", "tool"]
 

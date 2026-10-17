@@ -1,6 +1,7 @@
 """Minimal Streamlit chat UI for trying Betty locally against the FastAPI server."""
 
 import os
+from typing import Any
 
 import httpx
 import streamlit as st
@@ -20,14 +21,17 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "summary" not in st.session_state:
     st.session_state.summary = None
+if "trip_context" not in st.session_state:
+    st.session_state.trip_context = None
 
 
-def post(path: str) -> dict[str, str] | None:
+def post(path: str) -> dict[str, Any] | None:
     """POST the conversation to the backend; show an error and return None on failure."""
+    body: dict[str, Any] = {"messages": st.session_state.messages}
+    if path.endswith("/summarize") and st.session_state.trip_context:
+        body["trip_context"] = st.session_state.trip_context
     try:
-        response = httpx.post(
-            f"{api_url}{path}", json={"messages": st.session_state.messages}, timeout=90
-        )
+        response = httpx.post(f"{api_url}{path}", json=body, timeout=90)
         response.raise_for_status()
         return dict(response.json())
     except httpx.HTTPStatusError as exc:
@@ -45,6 +49,7 @@ if st.sidebar.button("Summarize trip", disabled=not st.session_state.messages):
 if st.sidebar.button("Reset conversation"):
     st.session_state.messages = []
     st.session_state.summary = None
+    st.session_state.trip_context = None
     st.rerun()
 
 with st.chat_message("assistant"):
@@ -62,9 +67,17 @@ if prompt := st.chat_input("Where would you like to go?"):
         data = post("/api/v1/chat")
         if data:
             st.write(data["reply"])
+            if data.get("ready"):
+                st.session_state.trip_context = data["trip_context"]
             st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
         else:
             st.session_state.messages.pop()  # drop the unanswered turn so the user can retry
+
+if st.session_state.trip_context:
+    st.divider()
+    st.success("✅ Ready to plan: Betty has enough information.")
+    with st.expander("Collected trip context"):
+        st.json(st.session_state.trip_context)
 
 if st.session_state.summary:
     st.divider()

@@ -54,7 +54,12 @@ def chat(request: ChatRequest, betty: BettyDep) -> ChatResponse:
             status.HTTP_422_UNPROCESSABLE_CONTENT, "Last message must be from the user."
         )
     try:
-        return ChatResponse(reply=betty.chat(request.messages))
+        result = betty.chat(request.messages)
+        return ChatResponse(
+            reply=result.reply,
+            ready=result.trip_context is not None,
+            trip_context=result.trip_context,
+        )
     except BettyError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -63,6 +68,6 @@ def chat(request: ChatRequest, betty: BettyDep) -> ChatResponse:
 def summarize(request: SummarizeRequest, betty: BettyDep) -> SummarizeResponse:
     """Condense the conversation into a single-paragraph trip summary."""
     try:
-        return SummarizeResponse(summary=betty.summarize(request.messages))
+        return SummarizeResponse(summary=betty.summarize(request.messages, request.trip_context))
     except BettyError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
