@@ -14,6 +14,17 @@ uv run uvicorn app.main:app --reload
 
 `BETTY_MODEL` (default `nemotron-3.5`) selects the model.
 
+## Local web UI (Streamlit)
+
+With the API running, in a second terminal:
+
+```bash
+uv run streamlit run ui/streamlit_app.py
+```
+
+Chat with Betty and click **Summarize trip** in the sidebar. The API URL defaults to
+`http://localhost:8000` (override with `BETTY_API_URL` or the sidebar field).
+
 ## Endpoints
 
 - `POST /api/v1/chat` — `{"messages": [{"role": "user", "content": "..."}]}` → `{"reply": "..."}`
@@ -24,5 +35,5 @@ uv run uvicorn app.main:app --reload
 ## Checks
 
 ```bash
-uv run ruff format --check . && uv run ruff check . && uv run mypy app tests && uv run pytest
+uv run ruff format --check . && uv run ruff check . && uv run mypy app tests ui && uv run pytest
 ```

@@ -30,7 +30,8 @@ def fake() -> FakeCompletions:
 @pytest.fixture
 def client(fake: FakeCompletions) -> Iterator[TestClient]:
     openai_like = SimpleNamespace(chat=SimpleNamespace(completions=fake))
-    service = BettyService(Settings(nvidia_api_key_2="x"), client=openai_like)  # type: ignore[arg-type]
+    settings = Settings(nvidia_api_key_2="x", betty_model="test-model", _env_file=None)
+    service = BettyService(settings, client=openai_like)  # type: ignore[arg-type]
     app.dependency_overrides[get_betty_service] = lambda: service
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -47,7 +48,7 @@ def test_chat(client: TestClient, fake: FakeCompletions) -> None:
     assert r.status_code == 200
     assert r.json()["reply"].startswith("Sounds lovely")
     sent = fake.calls[0]
-    assert sent["model"] == "nemotron-3.5"
+    assert sent["model"] == "test-model"
     assert sent["messages"][0]["role"] == "system"
 
 
