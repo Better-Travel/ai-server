@@ -1,0 +1,55 @@
+README.md
+  s_dd54cb86f697d4::t_d9f87c5c32a0dd 48,68,83-87
+app/schemas.py
+  s_dd54cb86f697d4::t_3b33bda7ff807f 140-148,151-152
+app/services/betty_service.py
+  s_dd54cb86f697d4::t_5a4785b10cff40 136-138
+app/services/place_finder.py
+  s_dd54cb86f697d4::t_a8c25ce90d84e6 15,17,23-24,63-65,88-93,98-105,113-116,126-134,181-206
+app/services/search_places_tool.py
+  s_dd54cb86f697d4::t_abda427b1dfb10 21-22
+osm/pipeline.py
+  s_dd54cb86f697d4::t_369e26385a196f 39-41,44
+osm/prompt.py
+  s_dd54cb86f697d4::t_718211fba1a859 36,40-45,47-51
+osm/schemas.py
+  s_dd54cb86f697d4::t_91b4d811e83fc3 103-113
+tests/test_place_finder.py
+  s_dd54cb86f697d4::t_e39a961027c95c 13,15,17,36,38,47,62-64,68,73,75-76,78,84,112-114,172-174,206,209,215,222,225,231-309
+tests/test_schemas.py
+  s_dd54cb86f697d4::t_bc67c3dc78657f 28-41
+tests/test_search_places.py
+  s_dd54cb86f697d4::t_a7a82b63efb7c5 292-295,298-300
+tests/test_ui.py
+  s_dd54cb86f697d4::t_00d16afa10f5d9 28-30,32-41,129-132
+tests/test_wikipedia.py
+  s_dd54cb86f697d4::t_8083154bba99ca 221
+ui/streamlit_app.py
+  s_dd54cb86f697d4::t_453741f90954e3 124-141,143,150-177
+osm/__main__.py
+  s_6dbdc4fb8e2461::t_cf55ab2762377e 12,23-24,30-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "f7f5ab401a8ed17bfbee734c2c989d2a0c4e4e24",
+  "prompts": {},
+  "sessions": {
+    "s_6dbdc4fb8e2461": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dea28361-0811-4060-b127-9074ba4c2457",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    },
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
