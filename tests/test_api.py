@@ -82,3 +82,9 @@ def test_missing_api_key_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         get_settings.cache_clear()
         _build_service.cache_clear()
+
+
+def test_root_redirects_to_docs(client: TestClient) -> None:
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/docs"

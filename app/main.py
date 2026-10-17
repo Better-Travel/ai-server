@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.schemas import (
@@ -31,6 +32,12 @@ def get_betty_service() -> BettyService:
 
 
 BettyDep = Annotated[BettyService, Depends(get_betty_service)]
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    """Send browsers hitting the bare URL to the interactive API docs."""
+    return RedirectResponse("/docs")
 
 
 @app.get("/health")
