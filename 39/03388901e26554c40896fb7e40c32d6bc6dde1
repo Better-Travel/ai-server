@@ -1,0 +1,31 @@
+README.md
+  s_dd54cb86f697d4::t_30ccea06a7de61 38-42
+app/prompts.py
+  s_dd54cb86f697d4::t_aebff42eb09949 31-33
+app/services/places_tool.py
+  s_dd54cb86f697d4::t_7fcdece5fc6895 12-13,17,59-61,63-85
+osm/__main__.py
+  s_dd54cb86f697d4::t_f4f48ae61a1a23 9,15
+osm/schemas.py
+  s_dd54cb86f697d4::t_4166bb3694e4c9 158-170,178
+osm/wikipedia.py
+  s_dd54cb86f697d4::t_54b2dbe827a265 1-159
+tests/test_wikipedia.py
+  s_dd54cb86f697d4::t_192a6539366deb 1-243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "3903388901e26554c40896fb7e40c32d6bc6dde1",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
