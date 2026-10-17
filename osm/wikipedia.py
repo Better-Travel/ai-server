@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
@@ -12,7 +13,12 @@ from .schemas import OverpassElement, WikipediaInfo, WikipediaText
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {"User-Agent": "ai-server-osm-query-builder/0.1", "Accept": "application/json"}
+# Wikimedia asks for a User-Agent that identifies the project and says how to reach it.
+HEADERS = {
+    "User-Agent": "ai-server/0.1 (https://github.com/Better-Travel/ai-server)",
+    "Accept": "application/json",
+}
+MAX_429_RETRIES = 2
 CHUNK_SIZE = 20  # the extracts API returns at most 20 intros per request
 OUTPUT_LANGS = ("pl", "en")
 # The language becomes part of a hostname, so only plain language codes are accepted.
@@ -50,7 +56,13 @@ def _query(
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
     """One API call. Returns (requested title -> resolved title, resolved title -> page)."""
     params = {**_BASE_PARAMS, "titles": "|".join(titles), **extra}
-    response = client.get(f"https://{lang}.wikipedia.org/w/api.php", params=params, headers=HEADERS)
+    url = f"https://{lang}.wikipedia.org/w/api.php"
+    for attempt in range(MAX_429_RETRIES + 1):
+        response = client.get(url, params=params, headers=HEADERS)
+        if response.status_code != 429 or attempt == MAX_429_RETRIES:
+            break
+        retry_after = response.headers.get("retry-after", "")
+        time.sleep(min(float(retry_after) if retry_after.isdigit() else 2.0 * (attempt + 1), 10.0))
     response.raise_for_status()
     query: dict[str, Any] = response.json().get("query", {})
     normalized = {n["from"]: n["to"] for n in query.get("normalized", [])}

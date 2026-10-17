@@ -241,3 +241,30 @@ def test_places_tool_returns_both_languages_trimmed(monkeypatch: Any) -> None:
     assert place["wikipedia"]["pl"]["extract"].endswith("…")
     assert len(place["wikipedia"]["pl"]["extract"]) <= 301
     assert "wikipedia" not in place["tags"]  # raw tag is not passed on
+
+
+def test_429_is_retried_with_retry_after(monkeypatch: Any) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr("osm.wikipedia.time.sleep", sleeps.append)
+    wiki = FakeWikipedia()
+    wiki.articles[("en", "A")] = "About A."
+    inner = wiki.client()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"retry-after": "3"})
+        return inner.send(request)
+
+    out = fetch_summaries([("en", "A")], httpx.Client(transport=httpx.MockTransport(handler)))
+
+    assert ("en", "A") in out
+    assert sleeps == [3.0]
+
+
+def test_persistent_429_gives_up_without_raising(monkeypatch: Any) -> None:
+    monkeypatch.setattr("osm.wikipedia.time.sleep", lambda s: None)
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429)))
+    assert fetch_summaries([("en", "A")], client) == {}

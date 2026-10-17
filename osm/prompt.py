@@ -7,6 +7,8 @@ Reply with the query only: no prose, no explanations, no markdown fences.
 Rules:
 - Start with `[out:json][timeout:25];`.
 - Use `nwr` so nodes, ways and relations are all matched.
+- Every filter of a request is an ALTERNATIVE: emit one `nwr` statement per key inside the union,
+  and never put two different keys on the same `nwr` statement (that would require both tags).
 - Combine several values of one key into one regex filter, e.g. `["amenity"~"^(cafe|bar)$"]`.
 - Scope a named area (`area` is a string) within its `country` (ISO 3166-1 alpha-2) like this:
   `area["ISO3166-1"="PT"][admin_level=2]->.c1; area["name"="Lisbon"](area.c1)->.a1;`
