@@ -1,6 +1,7 @@
 """finalize_trip_context: readiness criteria and the chat/summarize wiring (no network)."""
 
 import json
+from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,12 +14,15 @@ from app.schemas import Message
 from app.services.betty_service import BettyService
 from app.services.trip_context_tool import TOOL_NAME, parse_trip_context
 
+START = date.today() + timedelta(days=200)
+END = START + timedelta(days=2)
+
 
 def args(**overrides: Any) -> str:
     data: dict[str, Any] = {
         "destination": {"city": "Warsaw", "country": "Poland", "scope": "city"},
-        "start_date": "2026-05-03",
-        "end_date": "2026-05-05",
+        "start_date": START.isoformat(),
+        "end_date": END.isoformat(),
         "interests": ["local food"],
     }
     data.update(overrides)
@@ -53,7 +57,7 @@ def test_missing_timing_is_rejected() -> None:
 
 
 def test_end_before_start_is_rejected() -> None:
-    context, _ = parse_trip_context(args(start_date="2026-05-05", end_date="2026-05-03"))
+    context, _ = parse_trip_context(args(start_date=END.isoformat(), end_date=START.isoformat()))
     assert context is None
 
 
@@ -156,7 +160,7 @@ def test_tolerates_llm_quirks_seen_in_live_model() -> None:
     raw = json.dumps(
         {
             "destination": json.dumps({"city": "Warsaw", "country": "Poland", "scope": "city"}),
-            "start_date": "2027-05-03",
+            "start_date": START.isoformat(),
             "duration_days": 3,
             "interests": ["local food", "none"],
             "companions": "none",
@@ -176,3 +180,31 @@ def test_llm_response_text_is_logged(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level("INFO")
     make_service(Script(text("Where to, traveller?"))).chat(USER)
     assert "Where to, traveller?" in caplog.text
+
+
+def test_past_dates_are_rejected() -> None:
+    context, feedback = parse_trip_context(args(start_date="2020-05-03", end_date="2020-05-05"))
+    assert context is None
+    assert "in the past" in feedback
+
+
+def test_duration_contradicting_dates_is_rejected() -> None:
+    context, feedback = parse_trip_context(args(duration_days=7))
+    assert context is None
+    assert "contradicts" in feedback
+
+
+def test_chat_prompt_contains_todays_date_and_integrity_rules() -> None:
+    from app.prompts import build_chat_prompt
+
+    prompt = build_chat_prompt(date(2026, 10, 17))
+    assert "Today's date is 2026-10-17." in prompt
+    assert "no data is better than incorrect data" in prompt.lower()
+    assert "READINESS RULES" in prompt
+
+
+def test_chat_sends_todays_date_to_the_model() -> None:
+    script = Script(text("Where to?"))
+    make_service(script).chat(USER)
+    system = script.calls[0]["messages"][0]["content"]
+    assert f"Today's date is {date.today().isoformat()}." in system

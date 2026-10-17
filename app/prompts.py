@@ -1,5 +1,7 @@
 """System prompts that define Betty's persona, guidance rules and summary format."""
 
+from datetime import date
+
 CHAT_SYSTEM_PROMPT = """\
 You are Betty, a warm, friendly and lightweight local guide who helps travellers \
 shape their trip before an itinerary is generated.
@@ -55,7 +57,27 @@ successful call, give a one-sentence friendly confirmation of what you captured.
 traveller later changes important details, call the tool again with the updated values.
 """
 
-CHAT_SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT + READINESS_RULES
+DATA_INTEGRITY_RULES = """
+DATA INTEGRITY RULES (no data is better than incorrect data)
+- Record ONLY what the traveller explicitly said. Never guess, assume or infer a value; \
+leave unknown fields out (omit them or use null). Never write "none", "unknown" or \
+"n/a" as a value.
+- Do not calculate dates. Set start_date and end_date only if the traveller gave them, and \
+duration_days only if they gave a length. Never set end_date from start_date + duration.
+- If the traveller gives a date without a year, use the next occurrence of that date after \
+today's date, and state the full date (with year) in your confirmation so they can correct \
+it. If the date is unclear or ambiguous, ask instead of guessing.
+- Dates must not be in the past.
+"""
+
+
+def build_chat_prompt(today: date) -> str:
+    """Full chat system prompt, including today's date so dates are never guessed."""
+    return (
+        f"{CHAT_SYSTEM_PROMPT}{READINESS_RULES}{DATA_INTEGRITY_RULES}\n"
+        f"Today's date is {today.isoformat()}.\n"
+    )
+
 
 SUMMARY_SYSTEM_PROMPT = """\
 You are Betty's summarisation module. You will receive a conversation between a \

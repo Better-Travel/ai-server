@@ -84,8 +84,23 @@ class TripContext(BaseModel):
             )
         if self.start_date is None and self.duration_days is None:
             raise ValueError("timing is missing: need start_date or duration_days")
-        if self.start_date and self.end_date and self.end_date < self.start_date:
-            raise ValueError("end_date is before start_date")
+        today = date.today()
+        for name in ("start_date", "end_date"):
+            value: date | None = getattr(self, name)
+            if value is not None and value < today:
+                raise ValueError(
+                    f"{name} {value} is in the past (today is {today}): ask the traveller "
+                    "for the correct date, do not guess"
+                )
+        if self.start_date and self.end_date:
+            if self.end_date < self.start_date:
+                raise ValueError("end_date is before start_date")
+            days = (self.end_date - self.start_date).days + 1
+            if self.duration_days is not None and self.duration_days != days:
+                raise ValueError(
+                    f"duration_days={self.duration_days} contradicts the dates ({days} days): "
+                    "set only what the traveller said"
+                )
         return self
 
 

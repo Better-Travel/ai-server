@@ -4,13 +4,14 @@ import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.config import Settings
-from app.prompts import CHAT_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT
+from app.prompts import SUMMARY_SYSTEM_PROMPT, build_chat_prompt
 from app.schemas import Message, TripContext
 from app.services.places_tool import TOOL_NAME as PLACES_TOOL_NAME
 from app.services.places_tool import TOOL_SPEC as PLACES_TOOL_SPEC
@@ -76,7 +77,9 @@ class BettyService:
             tools.append(PLACES_TOOL_SPEC)
             handlers[PLACES_TOOL_NAME] = self._places_tool
         tools.append(TRIP_TOOL_SPEC)
-        reply = self._complete(CHAT_SYSTEM_PROMPT, messages, tools=tools, handlers=handlers)
+        reply = self._complete(
+            build_chat_prompt(date.today()), messages, tools=tools, handlers=handlers
+        )
         return ChatResult(reply=reply, trip_context=captured[-1] if captured else None)
 
     def summarize(
