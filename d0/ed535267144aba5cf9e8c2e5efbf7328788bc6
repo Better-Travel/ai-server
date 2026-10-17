@@ -1,0 +1,25 @@
+osm/prompt.py
+  s_dd54cb86f697d4::t_bf5beadd1dfa89 10-11
+osm/wikipedia.py
+  s_dd54cb86f697d4::t_709a9c65ee9f66 5,16-21,59-65
+tests/test_schemas.py
+  s_dd54cb86f697d4::t_3e55d8bc89f820 63-68
+tests/test_wikipedia.py
+  s_dd54cb86f697d4::t_dd49f97e0a848e 244-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "d0ed535267144aba5cf9e8c2e5efbf7328788bc6",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
