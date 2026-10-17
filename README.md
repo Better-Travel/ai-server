@@ -45,7 +45,7 @@ so keep them local.
 ```
 traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history, trip) --> find_places(summary)
                 ^                                                                               |
-                +----------------------------- places (max 20) --------------------------------+
+                +----------------------------- places (max 50) --------------------------------+
 ```
 
 1. **`search_places`** (`app/services/search_places_tool.py`) is Betty's only tool, and calling it
@@ -62,7 +62,8 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
 3. **`find_places`** (`app/services/place_finder.py` + `osm/`) takes that plain text: an LLM
    turns it into an Overpass QL query (tags limited to the catalog in `osm/schemas.py`),
    deterministic code runs it and sends syntax errors back to the model to fix. If the text
-   doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). Results are trimmed to 20.
+   doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). At most 50 places go back to Betty
+   and the client: a mix of kinds, Wikipedia-tagged ones first; cropping logs a warning (interim).
 4. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`) and suggests only
    returned places.
 

@@ -17,7 +17,9 @@ from osm.wikipedia import OUTPUT_LANGS, enrich
 
 logger = logging.getLogger(__name__)
 
-MAX_RESULTS = 20
+# Interim cap on places sent back to the LLM (and the client). Larger result sets are cropped to
+# the "best" ones by `select_diverse` and logged as a warning, until narrowing/ranking exists.
+MAX_RESULTS = 50
 MAX_EXTRACT_CHARS = 300
 MAX_REQUEST_CHARS = 2000
 KEPT_TAGS = ("amenity", "tourism", "historic", "leisure", "cuisine", "opening_hours", "website")
@@ -65,6 +67,14 @@ class PlaceFinder:
         except Exception as exc:  # LLM/network failures must not break the chat turn
             logger.exception("place search crashed")
             return FoundPlaces(status="error", message=f"Place search unavailable: {exc}")
+        if len(result.results) > MAX_RESULTS:
+            # TODO: handle large result sets properly (narrower queries or real ranking).
+            logger.warning(
+                "find_places returned %d places; cropping to the %d best for the LLM. Request: %r",
+                len(result.results),
+                MAX_RESULTS,
+                request[:MAX_REQUEST_CHARS],
+            )
         # Only the places Betty will see are looked up on Wikipedia; failures there are non-fatal.
         shown = enrich(select_diverse(result.results, MAX_RESULTS))
         return FoundPlaces(

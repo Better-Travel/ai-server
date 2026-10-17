@@ -132,7 +132,9 @@ class PlaceSearch(BaseModel):
     trip: Trip
     summary: str = Field(description="Exact text passed to find_places.")
     total: int = Field(default=0, description="Number of places OpenStreetMap returned.")
-    places: list[Place] = Field(default_factory=list, description="The first results (max 20).")
+    places: list[Place] = Field(
+        default_factory=list, description="The best results (max 50), a mix of kinds."
+    )
     error: str | None = Field(
         default=None, description="Set when the trip was accepted but the search failed."
     )

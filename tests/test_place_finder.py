@@ -5,7 +5,12 @@ from typing import Any
 
 import pytest
 
-from app.services.place_finder import MAX_REQUEST_CHARS, PlaceFinder, select_diverse
+from app.services.place_finder import (
+    MAX_REQUEST_CHARS,
+    MAX_RESULTS,
+    PlaceFinder,
+    select_diverse,
+)
 from osm.pipeline import NeedsMoreInfo
 from osm.schemas import OverpassElement, WikipediaInfo, WikipediaText
 
@@ -102,3 +107,33 @@ def test_selection_prefers_places_with_wikipedia() -> None:
 def test_selection_keeps_everything_when_under_the_limit() -> None:
     elements = [element(1, amenity="cafe"), element(2, tourism="museum")]
     assert select_diverse(elements, 20) == elements
+
+
+def test_large_results_are_cropped_with_a_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    many = [element(i, amenity="cafe") for i in range(MAX_RESULTS + 30)]
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete: SimpleNamespace(results=many),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+    caplog.set_level("WARNING")
+    found = finder()(REQUEST)
+    assert found.total == MAX_RESULTS + 30
+    assert len(found.places) == MAX_RESULTS == 50
+    assert f"returned {MAX_RESULTS + 30} places; cropping to the 50 best" in caplog.text
+
+
+def test_small_results_are_not_cropped_or_warned(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    few = [element(i, amenity="cafe") for i in range(3)]
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete: SimpleNamespace(results=few),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+    caplog.set_level("WARNING")
+    assert len(finder()(REQUEST).places) == 3
+    assert "cropping" not in caplog.text
