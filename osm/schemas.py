@@ -100,6 +100,17 @@ ALLOWED_TAGS: dict[str, set[str]] = {
     "shop": {v.value for v in ShopValue},
 }
 
+# Food and drink places; everything else in the catalog is kept for sights searches.
+FOOD_AMENITIES = frozenset(
+    {"restaurant", "cafe", "fast_food", "bar", "pub", "biergarten", "food_court", "ice_cream"}
+)
+# The catalog the query model sees for a sights search: no food amenities and no shops.
+SIGHT_TAGS: dict[str, set[str]] = {
+    key: (values - FOOD_AMENITIES if key == "amenity" else values)
+    for key, values in ALLOWED_TAGS.items()
+    if key != "shop"
+}
+
 
 class WikipediaText(BaseModel):
     title: str

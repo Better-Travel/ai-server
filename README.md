@@ -45,7 +45,7 @@ so keep them local.
 ```
 traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history, trip) --> find_places(summary)
                 ^                                                                               |
-                +----------------------------- places (max 20) --------------------------------+
+                +----------------------------- places (max 30) --------------------------------+
 ```
 
 1. **`search_places`** (`app/services/search_places_tool.py`) is Betty's only tool, and calling it
@@ -65,7 +65,7 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
    doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). Duplicates are dropped
    first: elements that share a `wikidata` tag, or have the same name less than 100 m apart (the
    Royal Castle is mapped as a building and as a museum point), keep only the one with more tags.
-   At most 20 places go back to Betty and the client: a mix of kinds, Wikipedia-tagged ones first;
+   At most 30 sights and attractions go back to Betty and the client (food and drink are excluded): Wikipedia-tagged ones first, then a mix of kinds;
    cropping logs a warning (interim). The prompt also tells the model to leave memorial plaques
    and stolpersteine out of `historic=memorial`, since Warsaw has thousands.
 4. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`) and suggests only
@@ -80,6 +80,11 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
   pages skipped). Each gets a short summary + URL in **Polish and English** (`wikipedia.pl` / `wikipedia.en`;
   the other language comes from Wikipedia's language links, and is absent if no translation exists). Lookup failures are
   ignored; the place is returned without it. No API key needed.
+- **Local Overpass (Mazowieckie, includes Warsaw):** `docker compose -f compose.overpass.yaml up -d`
+  (the first start downloads and indexes the extract; watch `docker logs -f overpass-mazowieckie`
+  and check `curl localhost:12345/api/status`), then set
+  `OVERPASS_URLS=http://localhost:12345/api/interpreter` in `.env`. Places outside Mazowieckie
+  return empty results there. Without `OVERPASS_URLS` the public servers are used.
 - Try `find_places` alone: `uv run python -m osm sample_request.txt` or
   `uv run python -m osm "Coffee and castles in Kraków, Poland"`
 

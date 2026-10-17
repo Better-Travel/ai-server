@@ -18,7 +18,8 @@ TOOL_SPEC: dict[str, Any] = {
     "function": {
         "name": TOOL_NAME,
         "description": (
-            "Search OpenStreetMap for real places that fit this trip. Call it only when the "
+            "Search OpenStreetMap for real sights and attractions that fit this trip (it does not "
+            "return restaurants, cafes or bars). Call it only when the "
             "destination (one city or district, with its country) and the timing (dates or a "
             "number of days) are known. Pass only these confirmed facts: the server reads the "
             "whole conversation (interests, companions, budget, ...) and builds the search "

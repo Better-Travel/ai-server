@@ -218,7 +218,7 @@ def test_place_finder_returns_both_languages_trimmed(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(
         "app.services.place_finder.generate_and_run",
-        lambda request, complete: SimpleNamespace(results=[element]),
+        lambda request, complete, **_: SimpleNamespace(query="Q", attempts=1, results=[element]),
     )
     monkeypatch.setattr("app.services.place_finder.enrich", lambda els: enrich(els, wiki.client()))
 

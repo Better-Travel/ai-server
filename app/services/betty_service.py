@@ -133,6 +133,9 @@ class BettyService:
         search = PlaceSearch(
             trip=trip,
             summary=summary,
+            query=found.query,
+            query_attempts=found.attempts,
+            fetched=found.fetched,
             total=found.total,
             places=found.places,
             error=None if found.status == "ok" else found.message,

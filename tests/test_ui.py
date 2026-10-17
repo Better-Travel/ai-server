@@ -25,8 +25,20 @@ TRIP = {"city": "Warsaw", "country": "PL", "scope": "city", "duration_days": 3}
 SEARCH = {
     "trip": TRIP,
     "summary": "Destination: Warsaw, country PL. Dates: 3 days.",
+    "query": "[out:json];\nout center tags;",
+    "query_attempts": 2,
+    "fetched": 3,
     "total": 1,
-    "places": [{"name": "Cafe A", "type": "node", "tags": {"amenity": "cafe"}}],
+    "places": [
+        {
+            "name": "Cafe A",
+            "type": "node",
+            "category": "amenity=cafe",
+            "lat": 52.2,
+            "lon": 21.0,
+            "tags": {"amenity": "cafe", "addr:street": "Prosta", "addr:housenumber": "1"},
+        }
+    ],
     "error": None,
 }
 searching = False
@@ -114,6 +126,9 @@ def test_search_is_shown_and_its_trip_is_sent_to_summarize(
     searching = True
     at = AppTest.from_file(APP, default_timeout=30).run()
     chat_once(at)
-    assert any("showing 1 of 1 places" in s.value for s in at.success)
+    assert any("returned 3 elements, 1 distinct places, showing 1" in s.value for s in at.success)
+    # the generated Overpass query is displayed, with the number of syntax fixes it took
+    assert any(c.value == SEARCH["query"] for c in at.code)
+    assert any("after 1 syntax fix" in m.value for m in at.markdown)
     button(at, "run_history_summarize").click().run()
     assert calls[-1][1]["trip"] == TRIP

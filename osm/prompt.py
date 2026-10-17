@@ -33,16 +33,22 @@ Query rules:
 - `{{geocodeArea:...}}` and `{{bbox}}` are Overpass Turbo macros and are NOT valid here.
 - Union all statements inside one `( ... );` block and end with `out center tags;`.
 
-Allowed tags:
+{scope}Allowed tags:
 {allowed}
 """
 
+SIGHTS_SCOPE = (
+    "Scope (this overrides what the traveller asks for): return only sights and attractions to "
+    "visit, such as museums, monuments, castles, palaces, churches, viewpoints, parks and nature.\n"
+    "Never include food and drink places (restaurants, cafes, bars, pubs, ice cream, bakeries) "
+    "even if the traveller mentions them, and do not query amenity values for food or any shop.\n\n"
+)
 
-def build_system_prompt() -> str:
-    allowed = "\n".join(
-        f"- {key}: {', '.join(sorted(values))}" for key, values in ALLOWED_TAGS.items()
-    )
-    return SYSTEM_PROMPT.format(allowed=allowed)
+
+def build_system_prompt(allowed_tags: dict[str, set[str]] | None = None, scope: str = "") -> str:
+    tags = ALLOWED_TAGS if allowed_tags is None else allowed_tags
+    allowed = "\n".join(f"- {key}: {', '.join(sorted(values))}" for key, values in tags.items())
+    return SYSTEM_PROMPT.format(allowed=allowed, scope=scope)
 
 
 def build_user_prompt(request: str) -> str:
