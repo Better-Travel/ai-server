@@ -8,25 +8,37 @@ from app.config import Settings
 from app.schemas import Message
 from app.services.betty_service import BettyService
 from app.services.places_tool import TOOL_NAME, PlacesTool
+from osm.pipeline import NeedsMoreInfo
 from osm.schemas import OverpassElement
 
-ARGS = json.dumps(
-    {
-        "places": [
-            {
-                "category": "food_drink",
-                "filters": [{"key": "amenity", "values": ["cafe"]}],
-                "area": "Warszawa",
-                "country": "PL",
-            }
-        ]
-    }
-)
+ARGS = json.dumps({"request": "Visiting Warszawa, Poland: sights and cafes."})
 
 
 def test_tool_rejects_invalid_arguments() -> None:
-    out = json.loads(PlacesTool(lambda: lambda m: "q")('{"places": []}'))
-    assert "Invalid arguments" in out["error"]
+    tool = PlacesTool(lambda: lambda m: "q")
+    for bad in ['{"places": []}', "not json", '{"request": ""}', '{"request": 5}']:
+        assert "Invalid arguments" in json.loads(tool(bad))["error"]
+
+
+def test_tool_passes_plain_text_to_the_pipeline(monkeypatch: Any) -> None:
+    seen: list[str] = []
+
+    def fake(request: str, complete: Any) -> Any:
+        seen.append(request)
+        return SimpleNamespace(results=[])
+
+    monkeypatch.setattr("app.services.places_tool.generate_and_run", fake)
+    PlacesTool(lambda: lambda m: "q")(ARGS)
+    assert seen == ["Visiting Warszawa, Poland: sights and cafes."]
+
+
+def test_tool_reports_needs_more_info(monkeypatch: Any) -> None:
+    def fake(request: str, complete: Any) -> Any:
+        raise NeedsMoreInfo("the country is missing")
+
+    monkeypatch.setattr("app.services.places_tool.generate_and_run", fake)
+    out = json.loads(PlacesTool(lambda: lambda m: "q")(ARGS))
+    assert out == {"needs_info": "the country is missing"}
 
 
 def test_tool_returns_compact_results(monkeypatch: Any) -> None:
@@ -35,7 +47,7 @@ def test_tool_returns_compact_results(monkeypatch: Any) -> None:
     )
     monkeypatch.setattr(
         "app.services.places_tool.generate_and_run",
-        lambda places, complete: SimpleNamespace(results=[element]),
+        lambda request, complete: SimpleNamespace(results=[element]),
     )
     out = json.loads(PlacesTool(lambda: lambda m: "q")(ARGS))
     assert out["total"] == 1
@@ -44,7 +56,7 @@ def test_tool_returns_compact_results(monkeypatch: Any) -> None:
 
 
 def test_tool_failures_are_returned_as_text(monkeypatch: Any) -> None:
-    def boom(places: Any, complete: Any) -> Any:
+    def boom(request: Any, complete: Any) -> Any:
         raise RuntimeError("llm down")
 
     monkeypatch.setattr("app.services.places_tool.generate_and_run", boom)
