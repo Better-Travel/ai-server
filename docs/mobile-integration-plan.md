@@ -122,15 +122,15 @@ Phase 2: context and robustness
 8. `X-Api-Key` check (key from settings; disabled when unset, for local development), basic rate
    limit, metadata-only `INFO` logs, `turn_id` in all logs for a turn.
 
-Phase 3 (separate design): itinerary/route planning on the server, which would fill a real
-`route` in the `done` event and replace the on-device route building.
+Route (current priority, being implemented separately): the server returns the route as an
+ordered list of coordinates; the contract gets the field once it lands.
 
 ### Mobile (mobileApplication)
 
 Tracked in detail in [mobile-chat-api.md](mobile-chat-api.md#checklist-for-the-mobile-app).
 In short: new DTOs, an SSE-based `AIChatting` that emits events instead of one `Single`, the
 in-progress assistant bubble filled by deltas, sentence-by-sentence TTS in voice mode, places
-on the map from `search.places`, a route card built from `mentioned_place_ids`, bookmarks by
+on the map from `search.places`, the route drawn from the server's ordered coordinates, bookmarks by
 `osm_id`, and the mock server speaking the same stream so UI work continues offline.
 
 ### Order and hand-off
