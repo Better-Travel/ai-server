@@ -104,3 +104,17 @@ def test_all_endpoints_down_reports_hosts_without_full_urls(
     with pytest.raises(OverpassUnavailable) as info:
         run_query("q", client=_client(lambda r: httpx.Response(500)), retries=1, backoff=0)
     assert "a.example" in str(info.value) and "SECRETKEY" not in str(info.value)
+
+
+def test_default_endpoint_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OVERPASS_URLS", raising=False)
+    monkeypatch.delenv("OVERPASS_URL", raising=False)
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        return httpx.Response(500)
+
+    with pytest.raises(OverpassUnavailable):
+        run_query("q", client=_client(handler), retries=0)
+    assert hosts == ["overpass-api.de", "overpass.private.coffee"]

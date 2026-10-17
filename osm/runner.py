@@ -8,8 +8,8 @@ import httpx
 from .schemas import OverpassElement
 
 DEFAULT_URLS = [
-    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
 ]
 TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
 # overpass-api.de answers 406 to requests with a generic client User-Agent or no Accept header.
