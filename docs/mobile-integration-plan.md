@@ -1,5 +1,11 @@
 # Mobile integration: gap analysis and plan
 
+> **Current scope (2026-10-18):** for now the mobile app needs only one thing from the server:
+> an **ordered list of coordinates** for the route. The server-side routing that produces it is
+> being implemented; its exact field name and shape will be added here when it lands. Everything
+> else below (streaming, voice mode, language, place details) is the longer-term plan and is not
+> needed yet.
+
 Status: proposal, 2026-10-18. Nothing here is implemented yet. The API contract the mobile app
 codes against is in [mobile-chat-api.md](mobile-chat-api.md).
 
@@ -45,11 +51,9 @@ The two sides have never talked to each other: the mobile app only knows its own
 
 ### Should have soon after
 
-7. **Route card.** The app's `SuggestedRoute` (title, distance, duration, stops) has no
-   counterpart: Betty does not plan itineraries yet. Until she does, the app can build the route
-   on the device from `mentioned_place_ids` (stops in that order, `WalkingRouting` for the path,
-   distance and duration from the walking route). A server-side itinerary step is a separate,
-   later piece of work.
+7. **Route.** The app needs an ordered list of coordinates; the server has none (Betty does not
+   plan routes). This is the current priority and is being implemented on the server; the
+   contract gets the field once it lands.
 8. **Memory of earlier results.** The server is stateless and only sees message text, so on the
    next turn Betty no longer has the places she was given ("tell me more about the second one"
    fails). The request gets an optional `last_search` (the `search` object from the previous

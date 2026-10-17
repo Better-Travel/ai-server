@@ -1,5 +1,11 @@
 # Betty chat API for the mobile app
 
+> **Current scope (2026-10-18):** for now the mobile app needs only one thing from the server:
+> an **ordered list of coordinates** for the route. The server-side routing that produces it is
+> being implemented; its exact field name and shape will be added here when it lands. Everything
+> else below (streaming, voice mode, language, place details) is the longer-term plan and is not
+> needed yet.
+
 Status: proposed contract, 2026-10-18. The server side is not implemented yet (see
 [mobile-integration-plan.md](mobile-integration-plan.md)). Fields marked **(new)** do not exist on
 the server today; everything else does. Please review and send back anything that doesn't fit
@@ -238,12 +244,9 @@ Unknown fields may be added later: keep `ignoreUnknownKeys = true`.
 
 - **Map pins**: every place in `search.places` with coordinates. Highlight the ones in
   `mentioned_place_ids`.
-- **Route card** (`SuggestedRoute`): the server does not plan routes yet, so `done` has no
-  `route`. Build one on the device when `mentioned_place_ids` has at least `MIN_ROUTE_STOPS`
-  places: stops in that order (`RouteStop(name, GeoPoint(lat, lon))`), the path from
-  `WalkingRouting.walkingPath`, distance and walking time from that path, and a title such as
-  the trip city. When the server learns to plan routes, `done` will gain a `route` field in the
-  app's current shape and this step goes away.
+- **Route**: the server will return the route as an ordered list of coordinates (being
+  implemented on the server; shape to follow). The app draws it in that order. Until then, do not
+  build routes on the device.
 - **Bookmarks**: use `osm_id` as `BookmarkedPlace.id` instead of `name@lat,lon`.
 - **Last search**: keep the most recent non-null `search` with the conversation and send it back
   as `last_search`.
@@ -354,7 +357,7 @@ post("/api/v1/chat/stream") {
 - [ ] Voice mode: `mode: "voice"`, sentence splitter, TTS queue with prefetch, stop on interrupt.
 - [ ] Places: pins from `search.places`, highlight `mentioned_place_ids`, details from tags and
       Wikipedia, bookmarks keyed by `osm_id`.
-- [ ] Route card built on the device from `mentioned_place_ids` + `WalkingRouting`.
+- [ ] Route: read the ordered list of coordinates once the server returns it (first priority).
 - [ ] Keep `last_search` and send it back.
 - [ ] Mock server: `POST /api/v1/chat/stream` and `POST /api/v1/chat` with the new shapes.
 - [ ] Base URL per platform; port 8000.
