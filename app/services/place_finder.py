@@ -4,6 +4,7 @@ Not an LLM tool itself: Betty's `search_places` tool builds the summary and call
 """
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -22,9 +23,32 @@ logger = logging.getLogger(__name__)
 MAX_RESULTS = 20
 MAX_EXTRACT_CHARS = 300
 MAX_REQUEST_CHARS = 2000
-KEPT_TAGS = ("amenity", "tourism", "historic", "leisure", "cuisine", "opening_hours", "website")
+KEPT_TAGS = (
+    "amenity",
+    "tourism",
+    "historic",
+    "leisure",
+    "cuisine",
+    "opening_hours",
+    "website",
+    "contact:website",
+    "phone",
+    "contact:phone",
+    "name:en",
+    "addr:street",
+    "addr:housenumber",
+    "addr:postcode",
+    "wikidata",
+    "wheelchair",
+    "diet:vegetarian",
+    "diet:vegan",
+    "fee",
+)
 # Tag keys that say what kind of place something is, in the order used to classify it.
 KIND_KEYS = ("historic", "tourism", "amenity", "leisure", "natural", "man_made", "shop")
+# Elements with the same name closer than this are one place mapped twice (see drop_duplicates).
+DUPLICATE_DISTANCE_M = 100.0
+_EARTH_RADIUS_M = 6_371_000.0
 
 
 @dataclass(frozen=True)
@@ -67,19 +91,20 @@ class PlaceFinder:
         except Exception as exc:  # LLM/network failures must not break the chat turn
             logger.exception("place search crashed")
             return FoundPlaces(status="error", message=f"Place search unavailable: {exc}")
-        if len(result.results) > MAX_RESULTS:
+        unique = drop_duplicates(result.results)
+        if len(unique) < len(result.results):
+            logger.info("dropped %d duplicate places", len(result.results) - len(unique))
+        if len(unique) > MAX_RESULTS:
             # TODO: handle large result sets properly (narrower queries or real ranking).
             logger.warning(
                 "find_places returned %d places; cropping to the %d best for the LLM. Request: %r",
-                len(result.results),
+                len(unique),
                 MAX_RESULTS,
                 request[:MAX_REQUEST_CHARS],
             )
         # Only the places Betty will see are looked up on Wikipedia; failures there are non-fatal.
-        shown = enrich(select_diverse(result.results, MAX_RESULTS))
-        return FoundPlaces(
-            status="ok", total=len(result.results), places=[_to_place(e) for e in shown]
-        )
+        shown = enrich(select_diverse(unique, MAX_RESULTS))
+        return FoundPlaces(status="ok", total=len(unique), places=[_to_place(e) for e in shown])
 
 
 def _kind(element: OverpassElement) -> str:
@@ -87,6 +112,43 @@ def _kind(element: OverpassElement) -> str:
         if key in element.tags:
             return f"{key}={element.tags[key]}"
     return "other"
+
+
+def _near(a: OverpassElement, b: OverpassElement) -> bool:
+    """True if both have coordinates less than DUPLICATE_DISTANCE_M apart."""
+    if a.lat is None or a.lon is None or b.lat is None or b.lon is None:
+        return False
+    # Equirectangular approximation: accurate to well under 1 m at this distance.
+    dx = math.radians(b.lon - a.lon) * math.cos(math.radians((a.lat + b.lat) / 2))
+    dy = math.radians(b.lat - a.lat)
+    return _EARTH_RADIUS_M * math.hypot(dx, dy) < DUPLICATE_DISTANCE_M
+
+
+def drop_duplicates(elements: list[OverpassElement]) -> list[OverpassElement]:
+    """Drop elements that map a place another element already covers; keep the one with more tags.
+
+    OSM often maps one place twice, e.g. the Royal Castle as a building and as a museum point
+    inside it. Two elements are the same place if they share a `wikidata` tag, or have the same
+    name and are less than DUPLICATE_DISTANCE_M apart. The original order is kept.
+    """
+    wikidata_seen: set[str] = set()
+    kept_by_name: dict[str, list[OverpassElement]] = {}
+    kept: set[int] = set()
+    # Most tags first (stable, so ties keep the earlier element).
+    for index in sorted(range(len(elements)), key=lambda i: -len(elements[i].tags)):
+        element = elements[index]
+        wikidata = element.tags.get("wikidata", "").strip()
+        name = (element.name or "").strip().casefold()
+        if wikidata in wikidata_seen:
+            continue
+        same_name = kept_by_name.setdefault(name, []) if name else []
+        if any(_near(element, other) for other in same_name):
+            continue
+        kept.add(index)
+        same_name.append(element)
+        if wikidata:
+            wikidata_seen.add(wikidata)
+    return [element for index, element in enumerate(elements) if index in kept]
 
 
 def select_diverse(elements: list[OverpassElement], limit: int) -> list[OverpassElement]:
@@ -123,8 +185,10 @@ def _to_place(element: OverpassElement) -> Place:
             if (text := getattr(element.wikipedia, lang))
         } or None
     return Place(
+        osm_id=f"{element.type}/{element.id}",
         name=element.name,
         type=element.type,
+        category=_kind(element),
         lat=element.lat,
         lon=element.lon,
         tags={k: v for k, v in element.tags.items() if k in KEPT_TAGS},

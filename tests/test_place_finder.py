@@ -9,6 +9,7 @@ from app.services.place_finder import (
     MAX_REQUEST_CHARS,
     MAX_RESULTS,
     PlaceFinder,
+    drop_duplicates,
     select_diverse,
 )
 from osm.pipeline import NeedsMoreInfo
@@ -57,7 +58,7 @@ def test_returns_compact_places(monkeypatch: pytest.MonkeyPatch) -> None:
         lat=52.2,
         lon=21.0,
         name="Cafe A",
-        tags={"amenity": "cafe", "email": "x"},
+        tags={"amenity": "cafe", "email": "x", "name:en": "Cafe A", "wheelchair": "yes"},
         wikipedia=WikipediaInfo(en=WikipediaText(title="Cafe A", url="u", extract="word " * 100)),
     )
     monkeypatch.setattr(
@@ -69,7 +70,9 @@ def test_returns_compact_places(monkeypatch: pytest.MonkeyPatch) -> None:
     assert found.status == "ok" and found.total == 1
     place = found.places[0]
     assert place.name == "Cafe A"
-    assert place.tags == {"amenity": "cafe"}  # unrelated tags are dropped
+    assert place.osm_id == "node/1" and place.category == "amenity=cafe"
+    # unrelated tags are dropped
+    assert place.tags == {"amenity": "cafe", "name:en": "Cafe A", "wheelchair": "yes"}
     assert place.wikipedia is not None and set(place.wikipedia) == {"en"}
     assert place.wikipedia["en"].extract.endswith("…")  # long extracts are trimmed
 
@@ -86,6 +89,87 @@ def test_failures_become_an_error_status(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def element(id: int, **tags: str) -> OverpassElement:
     return OverpassElement(id=id, type="node", name=f"P{id}", tags=tags)
+
+
+def test_place_json_has_id_category_and_app_tags(monkeypatch: pytest.MonkeyPatch) -> None:
+    tags = {
+        "name": "Muzeum",
+        "tourism": "museum",
+        "addr:street": "Plac Zamkowy",
+        "addr:housenumber": "4",
+        "contact:website": "https://example.org",
+        "fee": "yes",
+        "wikidata": "Q1",
+        "source": "survey",
+    }
+    museum = OverpassElement(id=7, type="way", name="Muzeum", tags=tags)
+    unknown = OverpassElement(id=8, type="node", name="Thing")
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete: SimpleNamespace(results=[museum, unknown]),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+    place, other = (p.model_dump() for p in finder()(REQUEST).places)
+    assert place["osm_id"] == "way/7"
+    assert place["category"] == "tourism=museum"
+    assert set(place["tags"]) == {
+        "tourism",
+        "addr:street",
+        "addr:housenumber",
+        "contact:website",
+        "fee",
+        "wikidata",
+    }
+    assert other["osm_id"] == "node/8" and other["category"] == "other"
+
+
+# The Royal Castle in Warsaw: mapped as a building and as a museum point inside it (~20 m apart).
+CASTLE = OverpassElement(
+    id=1,
+    type="way",
+    lat=52.2479,
+    lon=21.0152,
+    name="Zamek Królewski",
+    tags={"name": "Zamek Królewski", "historic": "castle", "building": "yes", "wikidata": "Q1"},
+)
+CASTLE_MUSEUM = OverpassElement(
+    id=2,
+    type="node",
+    lat=52.2480,
+    lon=21.0155,
+    name="Zamek Królewski",
+    tags={"name": "Zamek Królewski", "tourism": "museum"},
+)
+
+
+def test_same_name_nearby_is_one_place_keeping_more_tags() -> None:
+    assert drop_duplicates([CASTLE_MUSEUM, CASTLE]) == [CASTLE]
+
+
+def test_shared_wikidata_is_one_place_even_far_apart() -> None:
+    elsewhere = OverpassElement(
+        id=3, type="node", lat=52.0, lon=21.0, name="Royal Castle", tags={"wikidata": "Q1"}
+    )
+    assert drop_duplicates([elsewhere, CASTLE]) == [CASTLE]
+
+
+def test_same_name_far_apart_or_without_coordinates_is_kept() -> None:
+    far = CASTLE_MUSEUM.model_copy(update={"id": 3, "lat": 52.2530})  # ~570 m north
+    unplaced = CASTLE_MUSEUM.model_copy(update={"id": 4, "lat": None, "lon": None})
+    other = element(5, amenity="cafe")
+    elements = [CASTLE, far, unplaced, other]
+    assert drop_duplicates(elements) == elements
+
+
+def test_duplicates_are_dropped_before_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete: SimpleNamespace(results=[CASTLE_MUSEUM, CASTLE]),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+    found = finder()(REQUEST)
+    assert found.total == 1
+    assert [p.osm_id for p in found.places] == ["way/1"]
 
 
 def test_selection_takes_turns_between_kinds() -> None:

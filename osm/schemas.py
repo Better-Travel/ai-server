@@ -13,7 +13,6 @@ class TourismValue(StrEnum):
     ZOO = "zoo"
     AQUARIUM = "aquarium"
     THEME_PARK = "theme_park"
-    INFORMATION = "information"
 
 
 class HistoricValue(StrEnum):
@@ -27,6 +26,9 @@ class HistoricValue(StrEnum):
     PALACE = "palace"
     CITY_GATE = "city_gate"
     SHIP = "ship"
+    CHURCH = "church"
+    BUILDING = "building"
+    DISTRICT = "district"
 
 
 class AmenityValue(StrEnum):
@@ -49,6 +51,8 @@ class AmenityValue(StrEnum):
     PLANETARIUM = "planetarium"
     MUSIC_VENUE = "music_venue"
     FOUNTAIN = "fountain"
+    # sights (Warsaw's historic churches and synagogues are often tagged only this way)
+    PLACE_OF_WORSHIP = "place_of_worship"
 
 
 class LeisureValue(StrEnum):

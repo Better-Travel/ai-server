@@ -62,13 +62,18 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
 3. **`find_places`** (`app/services/place_finder.py` + `osm/`) takes that plain text: an LLM
    turns it into an Overpass QL query (tags limited to the catalog in `osm/schemas.py`),
    deterministic code runs it and sends syntax errors back to the model to fix. If the text
-   doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). At most 20 places go back to Betty
-   and the client: a mix of kinds, Wikipedia-tagged ones first; cropping logs a warning (interim).
+   doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). Duplicates are dropped
+   first: elements that share a `wikidata` tag, or have the same name less than 100 m apart (the
+   Royal Castle is mapped as a building and as a museum point), keep only the one with more tags.
+   At most 20 places go back to Betty and the client: a mix of kinds, Wikipedia-tagged ones first;
+   cropping logs a warning (interim). The prompt also tells the model to leave memorial plaques
+   and stolpersteine out of `historic=memorial`, since Warsaw has thousands.
 4. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`) and suggests only
    returned places.
 
 - The query-writing model needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`);
-  `NVIDIA_MODEL` selects it. `BETTY_PLACES_TOOL=false` skips the OSM search (the trip is still
+  `NVIDIA_MODEL` selects it. Each call times out after `REQUEST_TIMEOUT_SECONDS` (default 60)
+  and is retried once. `BETTY_PLACES_TOOL=false` skips the OSM search (the trip is still
   validated and summarised).
 - Places whose OSM `wikipedia=lang:Title` tag is set are looked up on Wikipedia by that exact
   title (`osm/wikipedia.py`, batched per language, redirects followed, disambiguation and missing
@@ -85,9 +90,16 @@ The server is stateless: send the full history on each call.
 - `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}]}` →
   `{"reply": "...", "search": null | {...}}`. `search` is set only on a turn where Betty had enough
   information and searched:
-  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{name, type, lat, lon, tags, wikipedia}], "error": null}`.
+  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, wikipedia}], "error": null}`.
   `error` is set when the trip was accepted but the search failed. Keep the last `search` on the
   client; Betty searches again when the trip changes.
+  - `osm_id` is the stable OSM id (`"node/123"`, `"way/456"`): use it to dedupe, save favourites
+    or refresh a place. `category` is the place's kind as one tag (`"tourism=museum"`, or
+    `"other"`). `total` counts distinct places, after duplicates are dropped.
+  - `tags` keeps only: `amenity`, `tourism`, `historic`, `leisure`, `cuisine`, `opening_hours`,
+    `website`, `contact:website`, `phone`, `contact:phone`, `name:en`, `addr:street`,
+    `addr:housenumber`, `addr:postcode`, `wikidata`, `wheelchair`, `diet:vegetarian`,
+    `diet:vegan`, `fee`. Any of them may be missing.
 - `POST /api/v1/summarize`: `{"messages": [...], "trip": {...}?}` → `{"summary": "..."}`. The same
   function `search_places` uses; with `trip` the first sentence is `Trip.describe()`.
 - `GET /health`

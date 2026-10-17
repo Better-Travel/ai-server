@@ -19,7 +19,15 @@ from app.services.search_places_tool import TOOL_NAME, parse_trip
 START = date.today() + timedelta(days=200)
 END = START + timedelta(days=2)
 USER = [Message(role="user", content="Warsaw for 3 days, I love castles and coffee")]
-CAFE = Place(name="Cafe A", type="node", lat=52.2, lon=21.0, tags={"amenity": "cafe"})
+CAFE = Place(
+    osm_id="node/1",
+    name="Cafe A",
+    type="node",
+    category="amenity=cafe",
+    lat=52.2,
+    lon=21.0,
+    tags={"amenity": "cafe"},
+)
 
 
 def args(**overrides: Any) -> str:

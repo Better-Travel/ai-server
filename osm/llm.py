@@ -8,6 +8,10 @@ from openai import APIStatusError, OpenAI
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+# Same variable and default as app.config.Settings.request_timeout_seconds. Without a timeout the
+# SDK waits 600 s and retries twice, which could block a chat turn for about half an hour.
+DEFAULT_TIMEOUT_SECONDS = 60.0
+MAX_RETRIES = 1
 
 
 def model_name() -> str:
@@ -23,7 +27,11 @@ def make_clients() -> list[OpenAI]:
     ]
     if not keys:
         raise RuntimeError("NVIDIA_API_KEY_1 is not set (expected in .env)")
-    return [OpenAI(base_url=NVIDIA_BASE_URL, api_key=key) for key in keys]
+    timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))
+    return [
+        OpenAI(base_url=NVIDIA_BASE_URL, api_key=key, timeout=timeout, max_retries=MAX_RETRIES)
+        for key in keys
+    ]
 
 
 class FallbackClient:

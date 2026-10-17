@@ -16,8 +16,11 @@ Query rules:
 - Start with `[out:json][timeout:25];`.
 - Use `nwr` so nodes, ways and relations are all matched, and add `["name"]` to each.
 - Map wishes to tags: food and drink -> amenity; sights, museums, history -> tourism and historic;
+  churches, synagogues and other religious sites -> amenity=place_of_worship and historic=church;
   entertainment -> amenity and leisure; nature -> natural and leisure. Use only the tags listed
   below, and never invent keys or values.
+- Whenever a statement matches `historic=memorial` (alone or in a regex), add
+  `["memorial"!~"^(plaque|stolperstein)$"]` to that statement so memorial plaques are left out.
 - Every kind of place is an ALTERNATIVE: emit one `nwr` statement per key inside the union, and
   never put two different keys on the same `nwr` statement (that would require both tags).
 - Combine several values of one key into one regex filter, e.g. `["amenity"~"^(cafe|bar)$"]`.

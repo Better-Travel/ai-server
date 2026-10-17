@@ -116,8 +116,14 @@ class WikipediaSnippet(BaseModel):
 class Place(BaseModel):
     """One OpenStreetMap result as shown to Betty and returned to the client."""
 
+    osm_id: str = Field(
+        description="Stable OSM id, '<type>/<id>' (e.g. 'node/123'), for deduping and favourites."
+    )
     name: str | None = None
     type: Literal["node", "way", "relation"]
+    category: str = Field(
+        description="What kind of place it is, as one OSM tag (e.g. 'tourism=museum'), or 'other'."
+    )
     lat: float | None = None
     lon: float | None = None
     tags: dict[str, str] = Field(default_factory=dict)
@@ -131,7 +137,7 @@ class PlaceSearch(BaseModel):
 
     trip: Trip
     summary: str = Field(description="Exact text passed to find_places.")
-    total: int = Field(default=0, description="Number of places OpenStreetMap returned.")
+    total: int = Field(default=0, description="Number of distinct places OpenStreetMap returned.")
     places: list[Place] = Field(
         default_factory=list, description="The best results (max 20), a mix of kinds."
     )
