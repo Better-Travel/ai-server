@@ -1,0 +1,25 @@
+.env.example
+  s_dd54cb86f697d4::t_7fb5ba31be090e 15-16
+osm/__main__.py
+  s_dd54cb86f697d4::t_b5a6851b4b943f 8,15-18
+osm/runner.py
+  s_dd54cb86f697d4::t_87dad36003ea93 4,10-14,45-50,58-59,62,65-71,74-87,91
+tests/test_runner.py
+  s_dd54cb86f697d4::t_2581376e5719ea 20,57-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "b8a8384720b8b937495190d02bf95727b8a6d727",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
