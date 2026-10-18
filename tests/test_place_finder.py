@@ -16,10 +16,13 @@ from app.services.place_finder import (
     cap_per_kind,
     drop_duplicates,
     is_food,
+    place_image,
+    place_images,
     select_places,
 )
 from osm.pipeline import NeedsMoreInfo, QueryGenerationFailed
 from osm.schemas import OverpassElement, WikipediaInfo, WikipediaText
+from osm.wikipedia import ImageCredit
 
 REQUEST = "Destination: Warsaw, country PL. The traveller wants sights and cafes."
 
@@ -379,3 +382,87 @@ def test_the_pipeline_is_told_to_search_sights_only(monkeypatch: pytest.MonkeyPa
     assert "shop" not in seen["allowed_tags"]
     assert not {"restaurant", "cafe", "bar", "pub"} & seen["allowed_tags"]["amenity"]
     assert "museum" in seen["allowed_tags"]["tourism"]
+
+
+def with_wikipedia(**images: str | None) -> OverpassElement:
+    texts = {
+        lang: WikipediaText(title="T", url="u", extract="e", image=url, image_file="F x.jpg")
+        for lang, url in images.items()
+    }
+    return element(1, wikimedia_commons="File:Other.jpg").model_copy(
+        update={"wikipedia": WikipediaInfo(**texts)}
+    )
+
+
+def test_image_prefers_wikipedia_polish_then_english() -> None:
+    image = place_image(with_wikipedia(pl="https://pl/img.jpg", en="https://en/img.jpg"))
+    assert image is not None
+    assert (image.url, image.source) == ("https://pl/img.jpg", "wikipedia")
+    assert image.page_url == "https://pl.wikipedia.org/wiki/File:F%20x.jpg"
+    english = place_image(with_wikipedia(pl=None, en="https://en/img.jpg"))
+    assert english is not None and english.url == "https://en/img.jpg"
+
+
+def test_image_falls_back_to_osm_commons_file() -> None:
+    image = place_image(with_wikipedia(pl=None))
+    assert image is not None and image.source == "osm"
+    assert image.url == ("https://commons.wikimedia.org/wiki/Special:FilePath/Other.jpg?width=800")
+    assert image.page_url == "https://commons.wikimedia.org/wiki/File:Other.jpg"
+
+
+def test_image_from_the_osm_image_tag() -> None:
+    commons = place_image(element(1, image="File:Zamek Królewski.jpg"))
+    assert commons is not None and commons.url.startswith(
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Zamek_Kr%C3%B3lewski.jpg"
+    )
+    direct = place_image(element(1, image="https://example.org/photo.JPG?x=1"))
+    assert direct is not None and (direct.url, direct.page_url) == (
+        "https://example.org/photo.JPG?x=1",
+        None,
+    )
+
+
+def test_no_image_when_neither_source_has_one() -> None:
+    assert place_image(element(1)) is None
+    assert place_image(element(1, wikimedia_commons="Category:Royal Castle")) is None
+    assert place_image(element(1, image="https://example.org/gallery")) is None  # a web page
+    assert place_image(element(1, image="ftp://example.org/a.jpg")) is None
+
+
+def test_found_places_carry_the_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete, **_: SimpleNamespace(
+            query="Q", attempts=1, results=[element(1, image="File:A.jpg"), element(2)]
+        ),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+    credit = ImageCredit(author="Ala", license="CC BY-SA 3.0", license_url="https://cc/by-sa")
+    monkeypatch.setattr(
+        "app.services.place_finder.fetch_image_credits",
+        lambda files: {file: credit for file in files},
+    )
+    first, second = finder()(REQUEST).places
+    assert first.image is not None and first.image.source == "osm"
+    assert (first.image.author, first.image.license) == ("Ala", "CC BY-SA 3.0")
+    assert second.image is None and second.model_dump()["image"] is None
+
+
+def test_credits_are_looked_up_once_for_wiki_files_only() -> None:
+    elements = [
+        with_wikipedia(pl="https://pl/img.jpg"),
+        element(2, image="File:B c.jpg"),
+        element(3, image="https://example.org/d.png"),
+        element(4),
+    ]
+    calls: list[list[tuple[str, str]]] = []
+
+    def fetch(files: list[tuple[str, str]]) -> dict[tuple[str, str], ImageCredit]:
+        calls.append(files)
+        return {("pl.wikipedia.org", "F x.jpg"): ImageCredit("Ala", "CC BY 4.0", "https://cc")}
+
+    wiki, commons, url, none = place_images(elements, fetch)
+    assert calls == [[("pl.wikipedia.org", "F x.jpg"), ("commons.wikimedia.org", "B_c.jpg")]]
+    assert wiki is not None and (wiki.author, wiki.license_url) == ("Ala", "https://cc")
+    assert commons is not None and commons.author is None  # not found: page_url still credits
+    assert url is not None and url.author is None and none is None

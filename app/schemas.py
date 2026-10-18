@@ -113,6 +113,29 @@ class WikipediaSnippet(BaseModel):
     extract: str
 
 
+class PlaceImage(BaseModel):
+    """A picture of a place. When showing it, credit `author` and `license` (most images are
+    Creative Commons, which requires attribution)."""
+
+    url: str = Field(description="Image URL, usable directly in an <img> (about 800 px wide).")
+    source: Literal["wikipedia", "osm"] = Field(
+        description="'wikipedia': the lead image of its Wikipedia article (freely licensed); "
+        "'osm': from the place's OpenStreetMap image tags."
+    )
+    page_url: str | None = Field(
+        default=None, description="The image's description page (author and licence), if known."
+    )
+    author: str | None = Field(
+        default=None,
+        description="Photographer or creator(s) as plain text, from the file's metadata. Show it "
+        "as the credit, with the licence. Null if unknown (then link page_url).",
+    )
+    license: str | None = Field(
+        default=None, description="Short licence name, e.g. 'CC BY-SA 3.0'."
+    )
+    license_url: str | None = Field(default=None, description="Link to the licence text.")
+
+
 class Place(BaseModel):
     """One OpenStreetMap result as shown to Betty and returned to the client."""
 
@@ -134,6 +157,11 @@ class Place(BaseModel):
     )
     wikipedia: dict[str, WikipediaSnippet] | None = Field(
         default=None, description="Keyed by language code ('pl', 'en')."
+    )
+    image: PlaceImage | None = Field(
+        default=None,
+        description="Picture of the place: Wikipedia's lead image, else one from OSM tags, else "
+        "null.",
     )
 
 

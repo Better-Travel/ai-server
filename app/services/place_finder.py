@@ -10,15 +10,23 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
+from urllib.parse import quote
 
-from app.schemas import Place, WikipediaSnippet
+from app.schemas import Place, PlaceImage, WikipediaSnippet
 from osm.fame import fame
 from osm.llm import FallbackClient, make_clients
 from osm.pipeline import Completer, NeedsMoreInfo, QueryGenerationFailed, generate_and_run
 from osm.prompt import SIGHTS_SCOPE
 from osm.runner import OverpassUnavailable
 from osm.schemas import FOOD_AMENITIES, SIGHT_TAGS, OverpassElement
-from osm.wikipedia import OUTPUT_LANGS, enrich
+from osm.wikipedia import (
+    COMMONS,
+    IMAGE_WIDTH,
+    OUTPUT_LANGS,
+    ImageCredit,
+    enrich,
+    fetch_image_credits,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +71,9 @@ KIND_KEYS = ("historic", "tourism", "amenity", "leisure", "natural", "man_made",
 # Elements with the same name closer than this are one place mapped twice (see drop_duplicates).
 DUPLICATE_DISTANCE_M = 100.0
 _EARTH_RADIUS_M = 6_371_000.0
+# A plain `image=` URL is used only if it points at an image file (it is often a web page).
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+CreditFetcher = Callable[[list[tuple[str, str]]], dict[tuple[str, str], ImageCredit]]
 
 
 @dataclass(frozen=True)
@@ -143,7 +154,9 @@ class PlaceFinder:
         return FoundPlaces(
             status="ok",
             total=len(unique),
-            places=[_to_place(e) for e in shown],
+            places=[
+                _to_place(e, image) for e, image in zip(shown, place_images(shown), strict=True)
+            ],
             query=result.query,
             attempts=result.attempts,
             fetched=len(result.results),
@@ -267,7 +280,89 @@ def _trim(extract: str) -> str:
     return extract[:MAX_EXTRACT_CHARS].rsplit(" ", 1)[0] + "…"
 
 
-def _to_place(element: OverpassElement) -> Place:
+def _commons_file(value: str) -> str | None:
+    """The file name in a Commons reference such as `File:Royal Castle.jpg`, else None."""
+    value = value.split(";")[0].strip()
+    for prefix in ("File:", "Image:"):
+        if value.startswith(prefix) and value[len(prefix) :].strip():
+            return value[len(prefix) :].strip().replace(" ", "_")
+    return None
+
+
+# An image and, if it is a wiki file, where to look up its author: (wiki host, file name).
+ImageChoice = tuple[PlaceImage, tuple[str, str] | None]
+
+
+def _commons_image(file: str) -> ImageChoice:
+    name = quote(file, safe="")
+    image = PlaceImage(
+        url=f"https://commons.wikimedia.org/wiki/Special:FilePath/{name}?width={IMAGE_WIDTH}",
+        source="osm",
+        page_url=f"https://commons.wikimedia.org/wiki/File:{name}",
+    )
+    return image, (COMMONS, file)
+
+
+def _choose_image(element: OverpassElement) -> ImageChoice | None:
+    for lang in OUTPUT_LANGS:
+        text = getattr(element.wikipedia, lang, None) if element.wikipedia else None
+        if text and text.image:
+            if not text.image_file:
+                return PlaceImage(url=text.image, source="wikipedia"), None
+            page_url = f"https://{lang}.wikipedia.org/wiki/File:{quote(text.image_file)}"
+            image = PlaceImage(url=text.image, source="wikipedia", page_url=page_url)
+            return image, (f"{lang}.wikipedia.org", text.image_file)
+    commons = _commons_file(element.tags.get("wikimedia_commons", ""))
+    if commons:
+        return _commons_image(commons)
+    tag = element.tags.get("image", "").split(";")[0].strip()
+    if file := _commons_file(tag):
+        return _commons_image(file)
+    path = tag.split("?")[0].lower()
+    if tag.startswith(("https://", "http://")) and path.endswith(IMAGE_EXTENSIONS):
+        return PlaceImage(url=tag, source="osm"), None
+    return None
+
+
+def place_image(element: OverpassElement) -> PlaceImage | None:
+    """A picture of the place: Wikipedia's lead image first, then OSM tags, else None.
+
+    Wikipedia: the Polish article's image, then the English one. OSM: a Commons file in
+    `wikimedia_commons` (Category: values are skipped), then `image` (a Commons file, or a URL
+    that ends in an image extension). Author and licence are not filled in (see place_images).
+    """
+    choice = _choose_image(element)
+    return choice[0] if choice else None
+
+
+def place_images(
+    elements: list[OverpassElement], fetch_credits: CreditFetcher | None = None
+) -> list[PlaceImage | None]:
+    """`place_image` for each element, with the author and licence of wiki files (one batched
+    lookup). They stay None for plain URLs or if the lookup fails; `page_url` still credits."""
+    choices = [_choose_image(element) for element in elements]
+    files = [choice[1] for choice in choices if choice and choice[1]]
+    credits = (fetch_credits or fetch_image_credits)(files) if files else {}
+    images: list[PlaceImage | None] = []
+    for choice in choices:
+        if choice is None:
+            images.append(None)
+            continue
+        image, file = choice
+        credit = credits.get(file) if file else None
+        if credit:
+            image = image.model_copy(
+                update={
+                    "author": credit.author,
+                    "license": credit.license,
+                    "license_url": credit.license_url,
+                }
+            )
+        images.append(image)
+    return images
+
+
+def _to_place(element: OverpassElement, image: PlaceImage | None = None) -> Place:
     wikipedia = None
     if element.wikipedia:
         wikipedia = {
@@ -285,4 +380,5 @@ def _to_place(element: OverpassElement) -> Place:
         tags={k: v for k, v in element.tags.items() if k in KEPT_TAGS},
         fame=fame(element),
         wikipedia=wikipedia,
+        image=image,
     )

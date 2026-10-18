@@ -94,7 +94,10 @@ def search_result(
     else:
         result["total"] = found.total
         result["shown"] = len(found.places)
-        result["places"] = [p.model_dump(exclude_none=True) for p in found.places]
+        # Image URLs are for the client; Betty doesn't need them.
+        result["places"] = [
+            p.model_dump(exclude_none=True, exclude={"image"}) for p in found.places
+        ]
     if routes:
         # Betty only needs the order and the reasons; the client gets coordinates in `search`.
         result["route"] = [

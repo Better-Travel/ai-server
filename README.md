@@ -134,6 +134,12 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
   pages skipped). Each gets a short summary + URL in **Polish and English** (`wikipedia.pl` / `wikipedia.en`;
   the other language comes from Wikipedia's language links, and is absent if no translation exists). Lookup failures are
   ignored; the place is returned without it. No API key needed.
+- **Pictures** (`places[].image`, or null): the lead image of the place's Polish, then English
+  Wikipedia article (fetched with the summary, freely licensed images only); if there is none,
+  the OSM `wikimedia_commons` tag, then `image` (a Commons file, or a URL ending in an image
+  extension). For wiki files one batched `imageinfo` request adds `author` (the photographer,
+  plain text), `license` and `license_url`, which clients must show as the credit; they are
+  null for plain URLs or if that request fails. Betty doesn't see image fields.
 - **Local Overpass (Mazowieckie, includes Warsaw):** `docker compose -f compose.overpass.yaml up -d`
   (the first start downloads and indexes the extract; watch `docker logs -f overpass-mazowieckie`
   and check `curl localhost:12345/api/status`), then set
@@ -208,7 +214,7 @@ The server is stateless: send the full history on each call.
 - `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}], "places_temperature": 0.2}` →
   `{"reply": "...", "search": null | {...}}`. `search` is set only on a turn where Betty had enough
   information and searched:
-  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, fame, wikipedia}], "routes": [{"stops": [{osm_id, name, category, lat, lon, role, why}], "distance_km": 3.4}], "error": null}`.
+  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, fame, wikipedia, image}], "routes": [{"stops": [{osm_id, name, category, lat, lon, role, why}], "distance_km": 3.4}], "error": null}`.
   `error` is set when the trip was accepted but the search failed. Keep the last `search` on the
   client; Betty searches again when the trip changes.
   - `osm_id` is the stable OSM id (`"node/123"`, `"way/456"`): use it to dedupe, save favourites

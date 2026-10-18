@@ -7,7 +7,13 @@ import httpx
 
 from app.services.place_finder import PlaceFinder
 from osm.schemas import OverpassElement
-from osm.wikipedia import enrich, fetch_summaries, parse_wikipedia_tag
+from osm.wikipedia import (
+    ImageCredit,
+    enrich,
+    fetch_image_credits,
+    fetch_summaries,
+    parse_wikipedia_tag,
+)
 
 REQUEST = "Visiting Warszawa, Poland: sights and cafes."
 
@@ -256,3 +262,72 @@ def test_persistent_429_gives_up_without_raising(monkeypatch: Any) -> None:
     monkeypatch.setattr("osm.wikipedia.time.sleep", lambda s: None)
     client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429)))
     assert fetch_summaries([("en", "A")], client) == {}
+
+
+def test_lead_image_comes_with_the_summary_in_the_same_request() -> None:
+    wiki = FakeWikipedia()
+    wiki.articles[("pl", "Zamek")] = {
+        "extract": "Zamek.",
+        "thumbnail": {"source": "https://upload.example/800px-Castle.jpg"},
+        "pageimage": "Castle.jpg",
+    }
+    info = fetch_summaries([("pl", "Zamek")], wiki.client())[("pl", "Zamek")]
+    assert info.pl is not None
+    assert (info.pl.image, info.pl.image_file) == (
+        "https://upload.example/800px-Castle.jpg",
+        "Castle.jpg",
+    )
+    assert all("pageimages" in r.url.params["prop"] for r in wiki.text_requests())
+
+
+def test_article_without_an_image_has_none() -> None:
+    wiki = FakeWikipedia()
+    wiki.articles[("en", "Plain")] = "No picture."
+    info = fetch_summaries([("en", "Plain")], wiki.client())[("en", "Plain")]
+    assert info.en is not None and info.en.image is None
+
+
+def test_image_credits_strip_html_and_follow_normalized_titles() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        meta = {
+            "Artist": {"value": 'Alina Zienowicz <a href="//commons">Ala&nbsp;z</a>'},
+            "LicenseShortName": {"value": "CC BY-SA 3.0"},
+            "LicenseUrl": {"value": "https://creativecommons.org/licenses/by-sa/3.0"},
+        }
+        query = {
+            "normalized": [
+                {"from": "File:Castle_1.jpg", "to": "Plik:Castle 1.jpg"},
+                {"from": "File:Gone.jpg", "to": "Plik:Gone.jpg"},
+            ],
+            "pages": [
+                # A Commons file used by Wikipedia: "missing" locally, but it has imageinfo.
+                {
+                    "title": "Plik:Castle 1.jpg",
+                    "missing": True,
+                    "imageinfo": [{"extmetadata": meta}],
+                },
+                {"title": "Plik:Gone.jpg", "missing": True},
+            ],
+        }
+        return httpx.Response(200, json={"query": query})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = fetch_image_credits(
+        [("pl.wikipedia.org", "Castle_1.jpg"), ("pl.wikipedia.org", "Gone.jpg")], client
+    )
+    assert found == {
+        ("pl.wikipedia.org", "Castle_1.jpg"): ImageCredit(
+            author="Alina Zienowicz Ala z",
+            license="CC BY-SA 3.0",
+            license_url="https://creativecommons.org/licenses/by-sa/3.0",
+        )
+    }
+    assert len(seen) == 1 and seen[0].url.host == "pl.wikipedia.org"
+
+
+def test_image_credit_failure_is_swallowed() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500)))
+    assert fetch_image_credits([("commons.wikimedia.org", "A.jpg")], client) == {}

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import app, get_betty_service
 from app.prompts import build_chat_prompt
-from app.schemas import Message, Place, Trip
+from app.schemas import Message, Place, PlaceImage, Trip
 from app.services.betty_service import BettyService
 from app.services.place_finder import FoundPlaces
 from app.services.route_planner import RouteBuilder
@@ -369,3 +369,14 @@ def test_places_temperature_defaults_to_the_setting_and_can_be_overridden() -> N
     make_service(Script(tool_call(args()), text("t"), text("ok")), finder).chat(USER)
     make_service(Script(tool_call(args()), text("t"), text("ok")), finder).chat(USER, 0.9)
     assert finder.temperatures == [0.2, 0.9]
+
+
+def test_betty_does_not_see_image_urls_but_the_client_does() -> None:
+    pictured = CAFE.model_copy(
+        update={"image": PlaceImage(url="https://img/cafe.jpg", source="osm")}
+    )
+    finder = FakeFinder(FoundPlaces(status="ok", total=1, places=[pictured]))
+    script = Script(tool_call(args()), text("t"), text("ok"))
+    result = make_service(script, finder).chat(USER)
+    assert "image" not in tool_message(script)["places"][0]
+    assert result.search is not None and result.search.places[0].image == pictured.image

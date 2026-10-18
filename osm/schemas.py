@@ -116,6 +116,8 @@ class WikipediaText(BaseModel):
     title: str
     url: str
     extract: str
+    image: str | None = None  # the article's lead image, a ~800 px thumbnail URL
+    image_file: str | None = None  # its file name, e.g. "Royal_Castle.jpg"
 
 
 class WikipediaInfo(BaseModel):

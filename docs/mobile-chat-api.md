@@ -237,6 +237,15 @@ searched.
       "wikipedia": {
         "pl": {"title": "Zamek Królewski w Warszawie", "url": "https://pl.wikipedia.org/wiki/...", "extract": "..."},
         "en": {"title": "Royal Castle, Warsaw", "url": "https://en.wikipedia.org/wiki/...", "extract": "..."}
+      },
+      "fame": 43,
+      "image": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/.../960px-POL_Warsaw_Royal_Castle_2008_(3).JPG",
+        "source": "wikipedia",
+        "page_url": "https://pl.wikipedia.org/wiki/File:POL_Warsaw_Royal_Castle_2008_(3).JPG",
+        "author": "Alina Zienowicz Ala z",
+        "license": "CC BY-SA 3.0",
+        "license_url": "https://creativecommons.org/licenses/by-sa/3.0"
       }
     }
   ],
@@ -268,6 +277,8 @@ searched.
 | `places[].lat`, `lon` | Can be null (rare). Skip such places on the map. |
 | `places[].tags` | Only these keys, each optional: `amenity`, `tourism`, `historic`, `leisure`, `cuisine`, `opening_hours`, `website`, `contact:website`, `phone`, `contact:phone`, `name:en`, `addr:street`, `addr:housenumber`, `addr:postcode`, `wikidata`, `wheelchair`, `diet:vegetarian`, `diet:vegan`, `fee`. `opening_hours` uses the [OSM syntax](https://wiki.openstreetmap.org/wiki/Key:opening_hours). |
 | `places[].wikipedia` | Optional, keyed by `"pl"` / `"en"`: title, URL and a short intro (about 300 characters at most). Only Polish and English exist. |
+| `places[].fame` | How well known the place is (Wikipedia language editions; Royal Castle 43). 0 = unknown. Warsaw only. |
+| `places[].image` | A picture, or null. `url` loads directly in an image view (about 800 px wide). `source`: `"wikipedia"` (the article's lead image) or `"osm"` (the place's OpenStreetMap image tags, used when Wikipedia has none). **Show a credit with it**: `author` and `license` (most images are Creative Commons, which requires attribution), e.g. "Photo: Alina Zienowicz, CC BY-SA 3.0", linking `license_url`. Any of `author`, `license`, `license_url`, `page_url` can be null; if `author` is null, link `page_url` ("Photo: Wikimedia Commons"). |
 | `routes` | Suggested routes, best first. At most one today; empty when no place has coordinates. See below. |
 | `error` | Set when the trip was accepted but the place search failed; `places` and `routes` are then empty. |
 
