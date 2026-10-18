@@ -1,0 +1,41 @@
+.env.example
+  s_dd54cb86f697d4::t_4d3a4ea264a860 8,19-22
+README.md
+  s_dd54cb86f697d4::t_8eb4a46208dddd 91-115
+app/config.py
+  s_dd54cb86f697d4::t_692d1b9c0fd6ee 18-23,27-32
+app/main.py
+  s_dd54cb86f697d4::t_2100bbae9238db 77-87
+app/prompts.py
+  s_dd54cb86f697d4::t_d6a9991cba79b1 64-69,77-87
+app/schemas.py
+  s_dd54cb86f697d4::t_431674f38a2d16 3,159-201,209,212-214
+app/services/betty_service.py
+  s_dd54cb86f697d4::t_3e80219816abc1 15,20-28,51,62,65-73,93-94,99-103,113-117,141-170,172-185,189-194,219,240-241
+app/services/event_finder.py
+  s_dd54cb86f697d4::t_9c4a236df2b64b 1-219
+app/services/search_places_tool.py
+  s_dd54cb86f697d4::t_561eb8fc8dfbb9 12,22-23,53-84,86-93
+tests/test_events.py
+  s_dd54cb86f697d4::t_25e5b0f53d3604 1-498
+tests/test_search_places.py
+  s_dd54cb86f697d4::t_f25e0488b759af 160-166,316
+ui/streamlit_app.py
+  s_dd54cb86f697d4::t_7a7b0f7eaa491c 34,183-217,228,230,241,271-272,285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "b9a7ddb2de77954d5aa53a7bd4729e75235be8c7",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
