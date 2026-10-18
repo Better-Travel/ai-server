@@ -262,6 +262,38 @@ class ChatResponse(BaseModel):
     )
 
 
+class StreamStart(BaseModel):
+    """First event of a streamed turn (`event: start`)."""
+
+    turn_id: str = Field(description="Id of this turn in the server logs; quote it in bug reports.")
+
+
+class StreamStatus(BaseModel):
+    """What the server is doing while no text arrives (`event: status`)."""
+
+    stage: Literal["searching_places"] = Field(
+        description="'searching_places': looking up places, events and the route (can take a "
+        "while). Clients should ignore stages they don't know."
+    )
+
+
+class StreamDelta(BaseModel):
+    """The next piece of Betty's reply (`event: delta`); append it to the text so far."""
+
+    text: str
+
+
+class StreamError(BaseModel):
+    """The turn failed after the stream started (`event: error`); nothing else follows."""
+
+    code: Literal["upstream_unavailable", "internal"] = Field(
+        description="'upstream_unavailable': the language model failed or timed out; "
+        "'internal': unexpected server error."
+    )
+    message: str
+    retryable: bool = Field(default=True, description="Sending the same request again may work.")
+
+
 class SummarizeRequest(BaseModel):
     """Conversation to condense into a trip summary."""
 

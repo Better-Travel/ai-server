@@ -143,12 +143,17 @@ The server is stateless: send the full history on each call.
     `website`, `contact:website`, `phone`, `contact:phone`, `name:en`, `addr:street`,
     `addr:housenumber`, `addr:postcode`, `wikidata`, `wheelchair`, `diet:vegetarian`,
     `diet:vegan`, `fee`. Any of them may be missing.
+- `POST /api/v1/chat/stream`: same request; the reply streams as Server-Sent Events: `start`
+  (`turn_id`), then `delta` (text), `status` (`searching_places`), `search` and `events` as they
+  happen, then one `done` (the `/chat` response body) or one `error` (`code`, `message`,
+  `retryable`). A `: ping` comment is sent after 15 s without output. Details for clients:
+  [docs/mobile-chat-api.md](docs/mobile-chat-api.md).
 - `POST /api/v1/summarize`: `{"messages": [...], "trip": {...}?}` → `{"summary": "..."}`. The same
   function `search_places` uses; with `trip` the first sentence is `Trip.describe()`.
 - `GET /health`
 
-Mobile app integration (streaming chat, proposed): [docs/mobile-chat-api.md](docs/mobile-chat-api.md)
-for the contract, [docs/mobile-integration-plan.md](docs/mobile-integration-plan.md) for the gap
+Mobile app integration: [docs/mobile-chat-api.md](docs/mobile-chat-api.md) for the contract (what
+the server does today), [docs/mobile-integration-plan.md](docs/mobile-integration-plan.md) for the gap
 analysis and plan.
 
 ## Checks

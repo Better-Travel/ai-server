@@ -2,13 +2,14 @@
 
 import json
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
+from pydantic import BaseModel
 
 from app.config import Settings
 from app.prompts import (
@@ -17,7 +18,16 @@ from app.prompts import (
     SUMMARY_SYSTEM_PROMPT,
     build_chat_prompt,
 )
-from app.schemas import Event, EventSearch, Message, PlaceSearch, Trip
+from app.schemas import (
+    ChatResponse,
+    Event,
+    EventSearch,
+    Message,
+    PlaceSearch,
+    StreamDelta,
+    StreamStatus,
+    Trip,
+)
 from app.services.event_finder import (
     MAX_EVENTS,
     EventFinder,
@@ -50,6 +60,14 @@ class ChatResult:
     reply: str
     search: PlaceSearch | None = None
     events: EventSearch | None = None
+
+
+@dataclass(frozen=True)
+class ChatEvent:
+    """One event of a streamed chat turn: its SSE event name and its JSON body."""
+
+    name: Literal["status", "delta", "search", "events", "done"]
+    data: BaseModel
 
 
 class BettyService:
@@ -94,8 +112,138 @@ class BettyService:
     def chat(self, messages: Sequence[Message]) -> ChatResult:
         """Return Betty's next reply; `search` is set when she had enough info and searched."""
         searches: list[PlaceSearch] = []
-
         event_searches: list[EventSearch] = []
+        reply = self._complete(
+            build_chat_prompt(date.today()),
+            messages,
+            tools=[SEARCH_TOOL_SPEC],
+            handlers={SEARCH_TOOL_NAME: self._search_handler(messages, searches, event_searches)},
+        )
+        return ChatResult(
+            reply=reply,
+            search=searches[-1] if searches else None,
+            events=event_searches[-1] if event_searches else None,
+        )
+
+    def chat_stream(self, messages: Sequence[Message]) -> Generator[ChatEvent]:
+        """Betty's next reply as it is written, for clients that show or speak it right away.
+
+        Yields `delta` events with the reply text, `status` while she searches, `search` and
+        `events` as soon as they exist, and finally `done` with the same body `chat()` gives.
+        Text that was streamed is never taken back: text before a tool call stays part of the
+        reply, and later rounds start after a blank line. Raises BettyError when the model
+        fails, possibly after some deltas. Closing the generator closes the model stream.
+        """
+        searches: list[PlaceSearch] = []
+        event_searches: list[EventSearch] = []
+        search_places = self._search_handler(messages, searches, event_searches)
+        payload = self._payload(build_chat_prompt(date.today()), messages)
+        max_rounds = self._settings.betty_max_tool_rounds
+        reply = ""
+        retried_empty = False
+        for round_number in range(max_rounds + 1):
+            kwargs = self._request_kwargs(None)
+            # On the final round stop offering tools so the model must answer in text.
+            if round_number < max_rounds:
+                kwargs["tools"] = [SEARCH_TOOL_SPEC]
+            round_text = ""
+            calls: dict[int, dict[str, str]] = {}
+            try:
+                stream = self._client.chat.completions.create(
+                    model=self._settings.betty_model, messages=payload, stream=True, **kwargs
+                )
+            except Exception as exc:  # openai raises a broad family of API/connection errors
+                raise BettyError(f"Upstream model request failed: {exc}") from exc
+            try:
+                for chunk in stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta is None:
+                        continue
+                    for call in getattr(delta, "tool_calls", None) or []:
+                        entry = calls.setdefault(
+                            call.index, {"id": "", "name": "", "arguments": ""}
+                        )
+                        entry["id"] = call.id or entry["id"]
+                        if call.function is not None:
+                            entry["name"] += call.function.name or ""
+                            entry["arguments"] += call.function.arguments or ""
+                    # Reasoning arrives in other delta fields and is never shown.
+                    piece = getattr(delta, "content", None) or ""
+                    if not round_text:
+                        piece = piece.lstrip()
+                        if piece and reply:
+                            piece = "\n\n" + piece
+                    if piece:
+                        round_text += piece
+                        yield ChatEvent("delta", StreamDelta(text=piece))
+            except Exception as exc:
+                raise BettyError(f"Upstream model stream failed: {exc}") from exc
+            finally:
+                close = getattr(stream, "close", None)
+                if close is not None:
+                    close()
+            logger.info(
+                "LLM stream (model=%s round=%d): %r tool_calls=%s",
+                self._settings.betty_model,
+                round_number,
+                round_text,
+                [(c["name"], c["arguments"]) for c in calls.values()] or None,
+            )
+            reply += round_text
+            if not calls:
+                if not round_text.strip():
+                    # The NVIDIA endpoint occasionally returns no content; one retry fixes it.
+                    if not retried_empty:
+                        retried_empty = True
+                        logger.warning("empty model response, retrying once")
+                        continue
+                    raise BettyError("Model returned an empty response.")
+                yield ChatEvent(
+                    "done",
+                    ChatResponse(
+                        reply=reply.strip(),
+                        search=searches[-1] if searches else None,
+                        events=event_searches[-1] if event_searches else None,
+                    ),
+                )
+                return
+            ordered = [calls[index] for index in sorted(calls)]
+            payload.append(
+                {
+                    "role": "assistant",
+                    "content": round_text or None,
+                    "tool_calls": [
+                        {
+                            "id": call["id"],
+                            "type": "function",
+                            "function": {"name": call["name"], "arguments": call["arguments"]},
+                        }
+                        for call in ordered
+                    ],
+                }
+            )
+            for call in ordered:
+                if call["name"] == SEARCH_TOOL_NAME:
+                    yield ChatEvent("status", StreamStatus(stage="searching_places"))
+                    found_before, events_before = len(searches), len(event_searches)
+                    result = search_places(call["arguments"])
+                    if len(searches) > found_before:
+                        yield ChatEvent("search", searches[-1])
+                    if len(event_searches) > events_before:
+                        yield ChatEvent("events", event_searches[-1])
+                else:
+                    result = json.dumps({"error": f"Unknown tool {call['name']}"})
+                logger.info("tool %s -> %s", call["name"], result[:500])
+                payload.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+        raise BettyError("Model did not produce a final answer.")
+
+    def _search_handler(
+        self,
+        messages: Sequence[Message],
+        searches: list[PlaceSearch],
+        event_searches: list[EventSearch],
+    ) -> Callable[[str], str]:
+        """The search_places tool for one turn; each search is appended to the given lists."""
 
         def search_places(arguments: str) -> str:
             trip = parse_trip(arguments)
@@ -109,17 +257,7 @@ class BettyService:
             searches.append(search)
             return tool_result
 
-        reply = self._complete(
-            build_chat_prompt(date.today()),
-            messages,
-            tools=[SEARCH_TOOL_SPEC],
-            handlers={SEARCH_TOOL_NAME: search_places},
-        )
-        return ChatResult(
-            reply=reply,
-            search=searches[-1] if searches else None,
-            events=event_searches[-1] if event_searches else None,
-        )
+        return search_places
 
     def summarize(self, messages: Sequence[Message], trip: Trip | None = None) -> str:
         """Condense the conversation into one plain-text paragraph.
@@ -239,31 +377,19 @@ class BettyService:
         tools: Sequence[dict[str, Any]] = (),
         handlers: Mapping[str, Callable[[str], str]] | None = None,
     ) -> str:
-        payload: list[ChatCompletionMessageParam] = [{"role": "system", "content": system_prompt}]
-        for m in messages:
-            if m.role == "user":
-                payload.append({"role": "user", "content": m.content})
-            else:
-                payload.append({"role": "assistant", "content": m.content})
+        payload = self._payload(system_prompt, messages)
         handlers = handlers or {}
         max_rounds = self._settings.betty_max_tool_rounds
         retried_empty = False
         for round_number in range(max_rounds + 1):
-            kwargs: dict[str, Any] = {}
-            if self._settings.betty_max_tokens:
-                kwargs["max_tokens"] = self._settings.betty_max_tokens
+            kwargs = self._request_kwargs(temperature)
             # On the final round stop offering tools so the model must answer in text.
             if tools and round_number < max_rounds:
                 kwargs["tools"] = list(tools)
             logger.debug("LLM request round %d: %s", round_number, payload)
             try:
                 response = self._client.chat.completions.create(
-                    model=self._settings.betty_model,
-                    messages=payload,
-                    temperature=self._settings.betty_temperature
-                    if temperature is None
-                    else temperature,
-                    **kwargs,
+                    model=self._settings.betty_model, messages=payload, **kwargs
                 )
             except Exception as exc:  # openai raises a broad family of API/connection errors
                 raise BettyError(f"Upstream model request failed: {exc}") from exc
@@ -315,3 +441,24 @@ class BettyService:
                 logger.info("tool %s -> %s", call.function.name, result[:500])
                 payload.append({"role": "tool", "tool_call_id": call.id, "content": result})
         raise BettyError("Model did not produce a final answer.")
+
+    @staticmethod
+    def _payload(
+        system_prompt: str, messages: Sequence[Message]
+    ) -> list[ChatCompletionMessageParam]:
+        payload: list[ChatCompletionMessageParam] = [{"role": "system", "content": system_prompt}]
+        for m in messages:
+            if m.role == "user":
+                payload.append({"role": "user", "content": m.content})
+            else:
+                payload.append({"role": "assistant", "content": m.content})
+        return payload
+
+    def _request_kwargs(self, temperature: float | None) -> dict[str, Any]:
+        """Sampling arguments shared by every model call (no tools)."""
+        kwargs: dict[str, Any] = {
+            "temperature": self._settings.betty_temperature if temperature is None else temperature
+        }
+        if self._settings.betty_max_tokens:
+            kwargs["max_tokens"] = self._settings.betty_max_tokens
+        return kwargs

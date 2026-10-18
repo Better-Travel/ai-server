@@ -1,13 +1,12 @@
 # Mobile integration: gap analysis and plan
 
-> **Current scope (2026-10-18):** for now the mobile app needs only one thing from the server:
-> an **ordered list of coordinates** for the route. It is `search.routes[0].stops[]` (`lat`, `lon`,
-> in visiting order; see "Mapping to the app's domain" in mobile-chat-api.md). Everything
-> else below (streaming, voice mode, language, place details) is the longer-term plan and is not
-> needed yet.
+> **Progress (2026-10-18):** done on the server: the route (`search.routes[0].stops`, item 7),
+> streaming (`POST /api/v1/chat/stream`, item 2), socket keep-alives (item 5) and `turn_id`
+> (item 15). The shared contract (item 1) is [mobile-chat-api.md](mobile-chat-api.md), which
+> describes what is implemented. Still open: items 3, 4, 6 and 8-14.
 
-Status: proposal, 2026-10-18. Nothing here is implemented yet. The API contract the mobile app
-codes against is in [mobile-chat-api.md](mobile-chat-api.md).
+Written as a proposal on 2026-10-18; the gap analysis below is kept as it was, with the progress
+above.
 
 ## Where things stand
 
@@ -82,7 +81,8 @@ The two sides have never talked to each other: the mobile app only knows its own
 
 ### Server (ai-server)
 
-Phase 1: streaming contract (unblocks the mobile developer)
+Phase 1: streaming contract (unblocks the mobile developer). **Streaming, keep-alives and
+`turn_id` are done; `language`, `mode`, `today`, limits and `mentioned_place_ids` are not.**
 
 1. `app/schemas.py`: `ChatRequest` gains `language: str | None`, `mode: Literal["text", "voice"]`
    (default `"text"`), `today: date | None`, `last_search: PlaceSearch | None`, and limits on
