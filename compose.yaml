@@ -1,6 +1,10 @@
 # Betty API in a container: docker compose up --build   (UI too: docker compose --profile ui up)
 # Settings come from .env (see .env.example). The local Overpass instance has its own file:
 # docker compose -f compose.overpass.yaml up -d
+# Own project name, so compose doesn't mix these containers with compose.overpass.yaml's
+# (both files live in this folder and would otherwise share the folder's project name).
+name: betty
+
 services:
   api:
     build:
