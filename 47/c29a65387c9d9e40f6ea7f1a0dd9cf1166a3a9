@@ -1,0 +1,53 @@
+.env.example
+  s_dd54cb86f697d4::t_854eefefb2260d 20-24
+README.md
+  s_dd54cb86f697d4::t_06484bb6116a7b 116-149
+app/config.py
+  s_dd54cb86f697d4::t_9f4a6c75d89f9e 34-40
+app/main.py
+  s_dd54cb86f697d4::t_3ded91cb8d1060 13-14,17-19,22,24-28,52-76,141-203
+app/prompts.py
+  s_dd54cb86f697d4::t_824c9a6eaee91d 142-182
+app/schemas.py
+  s_dd54cb86f697d4::t_90df84691269fb 202-262
+app/services/betty_service.py
+  s_dd54cb86f697d4::t_649d27879ac023 27,83-89,231
+app/services/guide_service.py
+  s_dd54cb86f697d4::t_afc289de092ee4 1-179
+app/services/llm_loop.py
+  s_dd54cb86f697d4::t_ff269c44b366c5 1-118
+app/services/narration.py
+  s_dd54cb86f697d4::t_d83f3f85a78363 1-198
+app/services/web_search.py
+  s_dd54cb86f697d4::t_55309bef3f05aa 1-76
+osm/wikipedia.py
+  s_dd54cb86f697d4::t_7cdec1d856f6b5 8,26-28,163-220
+tests/test_guide.py
+  s_dd54cb86f697d4::t_592fc30e8f8e28 1-274
+tests/test_narration.py
+  s_dd54cb86f697d4::t_b90523a61181d2 1-275
+tests/test_search_places.py
+  s_dd54cb86f697d4::t_e25ba5a908dba4 344
+tests/test_ui.py
+  s_dd54cb86f697d4::t_7188ebdb6d59f2 135-213
+tests/test_web_search.py
+  s_dd54cb86f697d4::t_745130455082a0 1-89
+ui/streamlit_app.py
+  s_dd54cb86f697d4::t_a8d28b2c2815ce 35-38,58-70,235-338,364-367,414-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "47c29a65387c9d9e40f6ea7f1a0dd9cf1166a3a9",
+  "prompts": {},
+  "sessions": {
+    "s_dd54cb86f697d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "100faa8e-ea95-4930-89c0-fb565f014751",
+        "model": "unknown"
+      },
+      "human_author": "mykyta-toropov <Mykyta.Toropov@ventionteams.com>"
+    }
+  }
+}
