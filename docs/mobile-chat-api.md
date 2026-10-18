@@ -30,6 +30,7 @@ docs are at `{baseUrl}/docs`.
 | `POST /api/v1/chat/stream` | Main chat endpoint. Betty's reply streams as Server-Sent Events. |
 | `POST /api/v1/chat` | The same turn as one blocking JSON response (same body as the stream's `done` event). |
 | `GET /health` | `{"status": "ok"}` |
+| `GET /api/v1/narration`, `POST /api/v1/narration/ask` | Spoken narration at a sight, and questions that interrupt it. Plain JSON, not streamed; see "Sight narration and the guide" in the server's README. A place's narration is looked up by its Wikipedia article: `lang` and `title` from `places[].wikipedia` (for example `wikipedia.pl.title` with `lang=pl`). |
 
 ## Request
 

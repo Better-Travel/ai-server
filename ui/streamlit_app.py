@@ -45,6 +45,10 @@ for key, default in (
     ("messages", []),
     ("search", None),
     ("events", None),
+    ("guide_narration", None),
+    ("guide_cursor", 0),
+    ("guide_history", []),
+    ("guide_last", None),
     ("debug_output", {}),
     ("chat_routes", {}),  # index of an assistant message -> the route returned with it
 ):
@@ -56,6 +60,19 @@ def post(path: str, body: dict[str, Any]) -> dict[str, Any] | None:
     """POST `body` to the backend; show an error and return None on failure."""
     try:
         response = httpx.post(f"{api_url}{path}", json=body, timeout=API_TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return dict(response.json())
+    except httpx.HTTPStatusError as exc:
+        st.error(f"API error {exc.response.status_code}: {exc.response.text}")
+    except httpx.HTTPError as exc:
+        st.error(f"Could not reach the API at {api_url}: {exc}")
+    return None
+
+
+def get(path: str, params: dict[str, Any]) -> dict[str, Any] | None:
+    """GET from the backend; show an error and return None on failure."""
+    try:
+        response = httpx.get(f"{api_url}{path}", params=params, timeout=120)
         response.raise_for_status()
         return dict(response.json())
     except httpx.HTTPStatusError as exc:
@@ -366,6 +383,110 @@ def render_events(events: dict[str, Any] | None) -> None:
         )
 
 
+def guide_places() -> list[tuple[str, str, str]]:
+    """(label, lang, title) for each place of the last search that has a Wikipedia article."""
+    found = []
+    for place in (st.session_state.search or {}).get("places") or []:
+        for lang, article in (place.get("wikipedia") or {}).items():
+            found.append((f"{place.get('name')} ({lang})", lang, article["title"]))
+    return found
+
+
+def render_guide() -> None:
+    """Try the narration flow without an audio client: step through segments, interrupt, ask."""
+    st.subheader("🎧 Guide")
+    st.caption(
+        "Stands in for the audio client: pick a place, step through the segments (the one marked "
+        "▶ is 'being spoken'), interrupt with a question, then the narration resumes."
+    )
+    options = guide_places()
+    choice = st.selectbox(
+        "Place from the last search",
+        range(len(options)),
+        format_func=lambda i: options[i][0],
+        index=None,
+        placeholder="Search first, or type a title below",
+        disabled=not options,
+    )
+    lang_col, title_col = st.columns([1, 3])
+    lang = lang_col.text_input("Language", "en")
+    title = title_col.text_input("or a Wikipedia title")
+    if st.button("Load narration", key="guide_load"):
+        if title.strip():
+            wanted = {"lang": lang.strip(), "title": title.strip()}
+        elif choice is not None:
+            wanted = {"lang": options[choice][1], "title": options[choice][2]}
+        else:
+            wanted = None
+            st.warning("Choose a place or type a title.")
+        if wanted:
+            narration = get("/api/v1/narration", wanted)
+            if narration:
+                st.session_state.guide_narration = {**narration, "lang": wanted["lang"]}
+                st.session_state.guide_cursor = 0
+                st.session_state.guide_history = []
+                st.session_state.guide_last = None
+
+    narration = st.session_state.guide_narration
+    if not narration:
+        return
+    segments = narration["segments"]
+    cursor = st.session_state.guide_cursor
+    finished = cursor >= len(segments)
+
+    next_col, status_col = st.columns([1, 3], vertical_alignment="center")
+    if next_col.button("Next segment ▶", key="guide_next", disabled=finished):
+        st.session_state.guide_cursor = cursor + 1
+        st.rerun()
+    status_col.caption(
+        "Narration finished: you can still ask questions."
+        if finished
+        else f"Speaking segment {cursor + 1} of {len(segments)}"
+    )
+    for segment in segments:
+        mark = "▶" if segment["id"] == cursor else ("✓" if segment["id"] < cursor else "·")
+        st.markdown(f"{mark} {segment['text']}")
+    st.caption(narration["attribution"])
+
+    with st.form("guide_ask", clear_on_submit=True):
+        question = st.text_input("Interrupt and ask a question")
+        asked = st.form_submit_button("✋ Interrupt & ask")
+    if asked and question.strip():
+        body = {
+            "place": {"lang": narration["lang"], "title": narration["title"]},
+            "cursor": cursor,
+            "question": question.strip(),
+            "history": list(st.session_state.guide_history),
+        }
+        with st.spinner("The guide is thinking..."):
+            answer = post("/api/v1/narration/ask", body)
+        if answer:
+            history = st.session_state.guide_history
+            history += [
+                {"role": "user", "content": question.strip()},
+                {"role": "assistant", "content": answer["answer"]},
+            ]
+            st.session_state.guide_last = {"question": question.strip(), **answer, "at": cursor}
+            resume = answer.get("resume")
+            st.session_state.guide_cursor = resume["from_segment"] if resume else len(segments)
+            st.rerun()
+
+    last = st.session_state.guide_last
+    if last:
+        st.markdown(f"**You (at segment {last['at'] + 1}):** {last['question']}")
+        st.markdown(f"**Guide:** {last['answer']}")
+        if last.get("sources"):
+            links = ", ".join(f"[{s['title'] or s['url']}]({s['url']})" for s in last["sources"])
+            st.caption(f"🌐 Searched the web. Sources: {links}")
+        resume = last.get("resume")
+        if resume:
+            bridge = f" “{resume['bridge']}”" if resume.get("bridge") else ""
+            resumes_at = resume["from_segment"] + 1
+            st.info(f"Then the client says{bridge} and resumes from segment {resumes_at}.")
+        else:
+            st.info("The narration had already finished, so nothing resumes.")
+
+
 def render_output(tool: str) -> None:
     result = st.session_state.debug_output.get(tool)
     if result is None or result["response"] is None:
@@ -392,6 +513,10 @@ if st.sidebar.button("Reset conversation"):
     st.session_state.events = None
     st.session_state.debug_output = {}
     st.session_state.chat_routes = {}
+    st.session_state.guide_narration = None
+    st.session_state.guide_cursor = 0
+    st.session_state.guide_history = []
+    st.session_state.guide_last = None
     st.rerun()
 
 left, right = st.columns(2, gap="large")
@@ -443,6 +568,8 @@ with status_box:
 
 # ---- right: functions
 with right:
+    render_guide()
+    st.divider()
     st.subheader("🔧 Functions")
     st.caption(
         'Input: request JSON `{"messages": [{"role": "user"|"assistant", '

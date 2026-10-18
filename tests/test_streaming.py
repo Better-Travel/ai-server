@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app, get_betty_service
 from app.schemas import ChatResponse, Message, PlaceSearch, StreamDelta
-from app.services.betty_service import BettyError, BettyService, ChatEvent
+from app.services.betty_service import BettyService, ChatEvent
+from app.services.llm_loop import BettyError
 from app.services.place_finder import FoundPlaces
 from app.services.search_places_tool import TOOL_NAME
 from tests.test_search_places import CAFE, USER, FakeFinder, Script, args, make_service, text

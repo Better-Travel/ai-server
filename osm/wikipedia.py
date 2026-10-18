@@ -5,6 +5,7 @@ import re
 import time
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -22,7 +23,9 @@ MAX_429_RETRIES = 2
 CHUNK_SIZE = 20  # the extracts API returns at most 20 intros per request
 OUTPUT_LANGS = ("pl", "en")
 # The language becomes part of a hostname, so only plain language codes are accepted.
-_TAG = re.compile(r"^(?P<lang>[a-z]{2,3}(?:-[a-z0-9]+)*|simple):(?P<title>.+)$")
+_LANG = r"[a-z]{2,3}(?:-[a-z0-9]+)*|simple"
+_TAG = re.compile(rf"^(?P<lang>{_LANG}):(?P<title>.+)$")
+_LANG_ONLY = re.compile(rf"^(?:{_LANG})$")
 
 WikiRef = tuple[str, str]
 _BASE_PARAMS = {"action": "query", "format": "json", "formatversion": "2", "redirects": "1"}
@@ -155,6 +158,64 @@ def fetch_summaries(
     finally:
         if own_client:
             client.close()
+
+
+class WikipediaUnavailable(Exception):
+    """Wikipedia could not be reached or answered with an error (not: the page does not exist)."""
+
+
+@dataclass(frozen=True)
+class WikipediaArticle:
+    lang: str
+    title: str
+    url: str
+    text: str
+
+
+def is_valid_language(lang: str) -> bool:
+    """True for a plain language code such as `pl` or `en` (it becomes part of a hostname)."""
+    return bool(_LANG_ONLY.match(lang))
+
+
+def fetch_article(
+    lang: str,
+    title: str,
+    *,
+    intro_only: bool = True,
+    client: httpx.Client | None = None,
+) -> WikipediaArticle | None:
+    """The plain text of one article (its intro, or all of it), looked up by exact title.
+
+    Returns None if the page does not exist or is a disambiguation page; raises
+    WikipediaUnavailable if Wikipedia cannot be reached.
+    """
+    title = title.strip()
+    if not is_valid_language(lang) or not title or "|" in title or len(title) > 300:
+        return None
+    extra = {
+        "prop": "extracts|info|pageprops",
+        "explaintext": "1",
+        "inprop": "url",
+        "ppprop": "disambiguation",
+    }
+    if intro_only:
+        extra["exintro"] = "1"
+    own_client = client is None
+    client = client or httpx.Client(timeout=15)
+    try:
+        resolved, pages = _query(lang, [title], extra, client)
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        raise WikipediaUnavailable(str(exc)) from exc
+    finally:
+        if own_client:
+            client.close()
+    page = pages.get(resolved[title])
+    if not page or page.get("missing") or "disambiguation" in page.get("pageprops", {}):
+        return None
+    text = (page.get("extract") or "").strip()
+    if not text:
+        return None
+    return WikipediaArticle(lang=lang, title=page["title"], url=page["fullurl"], text=text)
 
 
 def enrich(

@@ -182,3 +182,82 @@ def test_returned_route_is_shown_in_the_chat_in_order(
     chat_once(at)
     assert sum("Your route" in m.value for m in at.markdown) == 2
     assert all(set(m) == {"role", "content"} for m in calls[-1][1]["messages"])
+
+
+# ---- the guide panel
+
+NARRATION = {
+    "title": "Warsaw Barbican",
+    "lang": "en",
+    "url": "https://en.wikipedia.org/wiki/Warsaw_Barbican",
+    "attribution": "Text from Wikipedia (en), licensed CC BY-SA 4.0",
+    "segments": [{"id": i, "text": f"Segment {i}."} for i in range(3)],
+}
+ANSWER = {
+    "answer": "It was built in 1548.",
+    "used_web": True,
+    "sources": [{"title": "Official site", "url": "https://zamek.pl"}],
+    "resume": {"from_segment": 1, "bridge": "Back to Warsaw Barbican."},
+    "finished": False,
+}
+
+
+@pytest.fixture
+def guide_api(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    def fake_get(url: str, params: dict[str, Any], timeout: float) -> FakeResponse:
+        recorded.append((url, params))
+        return FakeResponse(NARRATION)
+
+    def fake_post(url: str, json: dict[str, Any], timeout: float) -> FakeResponse:
+        recorded.append((url, json))
+        return FakeResponse(ANSWER)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "post", fake_post)
+    return recorded
+
+
+def text_input(at: AppTest, label: str) -> Any:
+    return next(t for t in at.text_input if t.label == label)
+
+
+def test_guide_loads_a_narration_and_steps_through_it(
+    guide_api: list[tuple[str, dict[str, Any]]],
+) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    text_input(at, "or a Wikipedia title").set_value("Warsaw Barbican")
+    button(at, "guide_load").click().run()
+    assert guide_api[-1] == (
+        "http://localhost:8000/api/v1/narration",
+        {"lang": "en", "title": "Warsaw Barbican"},
+    )
+    assert any(m.value.startswith("▶ Segment 0.") for m in at.markdown)
+    button(at, "guide_next").click().run()
+    assert any(m.value.startswith("✓ Segment 0.") for m in at.markdown)
+    assert any(m.value.startswith("▶ Segment 1.") for m in at.markdown)
+
+
+def test_guide_question_sends_the_cursor_and_resumes_where_told(
+    guide_api: list[tuple[str, dict[str, Any]]],
+) -> None:
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    text_input(at, "or a Wikipedia title").set_value("Warsaw Barbican")
+    button(at, "guide_load").click().run()
+    button(at, "guide_next").click().run()
+    button(at, "guide_next").click().run()  # now speaking segment 2
+    text_input(at, "Interrupt and ask a question").set_value("Who built it?")
+    next(b for b in at.button if b.label == "✋ Interrupt & ask").click().run()
+
+    url, body = guide_api[-1]
+    assert url.endswith("/api/v1/narration/ask")
+    assert body["cursor"] == 2 and body["question"] == "Who built it?" and body["history"] == []
+    assert body["place"] == {"lang": "en", "title": "Warsaw Barbican"}
+    assert at.session_state["guide_cursor"] == 1  # resumes at the segment the server named
+    assert at.session_state["guide_history"][-1] == {
+        "role": "assistant",
+        "content": ANSWER["answer"],
+    }
+    assert any("It was built in 1548." in m.value for m in at.markdown)
+    assert any("Back to Warsaw Barbican." in i.value and "segment 2" in i.value for i in at.info)
