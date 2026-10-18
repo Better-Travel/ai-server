@@ -12,15 +12,16 @@ from typing import Literal
 from app.schemas import Place, WikipediaSnippet
 from osm.llm import FallbackClient, make_clients
 from osm.pipeline import Completer, NeedsMoreInfo, QueryGenerationFailed, generate_and_run
+from osm.prompt import SIGHTS_SCOPE
 from osm.runner import OverpassUnavailable
-from osm.schemas import OverpassElement
+from osm.schemas import FOOD_AMENITIES, SIGHT_TAGS, OverpassElement
 from osm.wikipedia import OUTPUT_LANGS, enrich
 
 logger = logging.getLogger(__name__)
 
 # Interim cap on places sent back to the LLM (and the client). Larger result sets are cropped to
-# the "best" ones by `select_diverse` and logged as a warning, until narrowing/ranking exists.
-MAX_RESULTS = 20
+# the notable ones first (`select_notable_first`) and logged as a warning, until ranking exists.
+MAX_RESULTS = 30
 MAX_EXTRACT_CHARS = 300
 MAX_REQUEST_CHARS = 2000
 KEPT_TAGS = (
@@ -59,6 +60,9 @@ class FoundPlaces:
     total: int = 0
     places: list[Place] = field(default_factory=list)
     message: str | None = None
+    query: str | None = None  # the Overpass QL that produced (or last failed to produce) results
+    attempts: int = 0  # how many queries the model wrote (1 = no syntax fixes needed)
+    fetched: int = 0  # raw elements Overpass returned, before duplicates are dropped
 
 
 PlaceSearcher = Callable[[str], FoundPlaces]
@@ -81,12 +85,24 @@ class PlaceFinder:
         try:
             if self._completer is None:
                 self._completer = self._completer_factory()
-            result = generate_and_run(request[:MAX_REQUEST_CHARS], self._completer)
+            result = generate_and_run(
+                request[:MAX_REQUEST_CHARS],
+                self._completer,
+                allowed_tags=SIGHT_TAGS,
+                scope=SIGHTS_SCOPE,
+            )
         except NeedsMoreInfo as exc:
             return FoundPlaces(
                 status="needs_info", message=str(exc) or "destination or country unclear"
             )
-        except (QueryGenerationFailed, OverpassUnavailable) as exc:
+        except QueryGenerationFailed as exc:
+            return FoundPlaces(
+                status="error",
+                message=f"Place search failed: {exc}",
+                query=exc.query,
+                attempts=exc.attempts,
+            )
+        except OverpassUnavailable as exc:
             return FoundPlaces(status="error", message=f"Place search failed: {exc}")
         except Exception as exc:  # LLM/network failures must not break the chat turn
             logger.exception("place search crashed")
@@ -94,6 +110,10 @@ class PlaceFinder:
         unique = drop_duplicates(result.results)
         if len(unique) < len(result.results):
             logger.info("dropped %d duplicate places", len(result.results) - len(unique))
+        sights = [e for e in unique if not is_food(e)]
+        if len(sights) < len(unique):
+            logger.info("dropped %d food and drink places", len(unique) - len(sights))
+        unique = sights
         if len(unique) > MAX_RESULTS:
             # TODO: handle large result sets properly (narrower queries or real ranking).
             logger.warning(
@@ -103,8 +123,15 @@ class PlaceFinder:
                 request[:MAX_REQUEST_CHARS],
             )
         # Only the places Betty will see are looked up on Wikipedia; failures there are non-fatal.
-        shown = enrich(select_diverse(unique, MAX_RESULTS))
-        return FoundPlaces(status="ok", total=len(unique), places=[_to_place(e) for e in shown])
+        shown = enrich(select_notable_first(unique, MAX_RESULTS))
+        return FoundPlaces(
+            status="ok",
+            total=len(unique),
+            places=[_to_place(e) for e in shown],
+            query=result.query,
+            attempts=result.attempts,
+            fetched=len(result.results),
+        )
 
 
 def _kind(element: OverpassElement) -> str:
@@ -149,6 +176,32 @@ def drop_duplicates(elements: list[OverpassElement]) -> list[OverpassElement]:
         if wikidata:
             wikidata_seen.add(wikidata)
     return [element for index, element in enumerate(elements) if index in kept]
+
+
+def is_food(element: OverpassElement) -> bool:
+    """True for food and drink places (restaurant, cafe, bar, ...), unless also a listed sight.
+
+    OSM often tags one object twice, e.g. a hotel or a bus-shaped kiosk as `amenity=cafe`. A place
+    is kept if it also carries a sight tag we search for (a catalogued tourism/historic/natural/
+    man_made value), so a castle that houses a restaurant stays.
+    """
+    if element.tags.get("amenity") not in FOOD_AMENITIES:
+        return False
+    return not any(
+        element.tags.get(key) in SIGHT_TAGS[key]
+        for key in ("tourism", "historic", "natural", "man_made")
+    )
+
+
+def select_notable_first(elements: list[OverpassElement], limit: int) -> list[OverpassElement]:
+    """Up to `limit` places: the notable ones (Wikipedia/Wikidata tag) first, then the rest.
+
+    Each tier is picked with `select_diverse`, so no single kind fills every slot.
+    """
+    notable = [e for e in elements if {"wikipedia", "wikidata"} & e.tags.keys()]
+    rest = [e for e in elements if not {"wikipedia", "wikidata"} & e.tags.keys()]
+    picked = select_diverse(notable, limit)
+    return picked + select_diverse(rest, limit - len(picked))
 
 
 def select_diverse(elements: list[OverpassElement], limit: int) -> list[OverpassElement]:

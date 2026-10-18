@@ -36,9 +36,12 @@ def generate_and_run(
     complete: Completer,
     run: Runner = run_query,
     max_fixes: int = 3,
+    *,
+    allowed_tags: dict[str, set[str]] | None = None,
+    scope: str = "",
 ) -> PipelineResult:
     messages = [
-        {"role": "system", "content": build_system_prompt()},
+        {"role": "system", "content": build_system_prompt(allowed_tags, scope)},
         {"role": "user", "content": build_user_prompt(request)},
     ]
     attempts = 0

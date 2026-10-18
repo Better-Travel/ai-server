@@ -289,9 +289,15 @@ def post_chat(service: BettyService) -> dict[str, Any]:
 
 
 def test_api_returns_the_search() -> None:
-    finder = FakeFinder(FoundPlaces(status="ok", total=1, places=[CAFE]))
+    found = FoundPlaces(
+        status="ok", total=1, places=[CAFE], query="[out:json]; out;", attempts=2, fetched=3
+    )
+    finder = FakeFinder(found)
     body = post_chat(make_service(Script(tool_call(args()), text("NONE"), text("Done")), finder))
     assert body["reply"] == "Done"
+    assert body["search"]["query"] == "[out:json]; out;"
+    assert body["search"]["query_attempts"] == 2
+    assert body["search"]["fetched"] == 3
     assert body["search"]["trip"]["city"] == "Warsaw"
     assert body["search"]["summary"] == trip().describe()
     assert body["search"]["places"][0]["name"] == "Cafe A"

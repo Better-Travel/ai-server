@@ -137,9 +137,19 @@ class PlaceSearch(BaseModel):
 
     trip: Trip
     summary: str = Field(description="Exact text passed to find_places.")
+    query: str | None = Field(
+        default=None, description="The Overpass QL the model generated for this search."
+    )
+    query_attempts: int = Field(
+        default=0, description="Queries the model wrote (more than 1 means syntax fixes)."
+    )
+    fetched: int = Field(
+        default=0, description="Raw elements Overpass returned, before duplicates were dropped."
+    )
     total: int = Field(default=0, description="Number of distinct places OpenStreetMap returned.")
     places: list[Place] = Field(
-        default_factory=list, description="The best results (max 20), a mix of kinds."
+        default_factory=list,
+        description="Sights and attractions only (no food), max 30, notable ones first.",
     )
     error: str | None = Field(
         default=None, description="Set when the trip was accepted but the search failed."

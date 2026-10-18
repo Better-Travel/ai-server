@@ -25,3 +25,17 @@ def test_system_prompt_lists_tags_and_rules() -> None:
 
 def test_user_prompt_contains_the_text() -> None:
     assert "castles in Krakow" in build_user_prompt("  castles in Krakow, Poland  ")
+
+
+def test_sights_scope_removes_food_and_shops_from_the_catalog() -> None:
+    from osm.prompt import SIGHTS_SCOPE
+    from osm.schemas import SIGHT_TAGS
+
+    assert "shop" not in SIGHT_TAGS
+    assert not {"restaurant", "cafe", "bar", "pub", "fast_food"} & SIGHT_TAGS["amenity"]
+    assert {"museum", "attraction"} <= SIGHT_TAGS["tourism"]
+    prompt = build_system_prompt(SIGHT_TAGS, SIGHTS_SCOPE)
+    assert "Never include food and drink" in prompt
+    assert "restaurant" not in prompt.split("Allowed tags:")[1]
+    # the default (unscoped) prompt still lists everything
+    assert "restaurant" in build_system_prompt()

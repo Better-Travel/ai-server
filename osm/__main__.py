@@ -9,7 +9,7 @@ from osm.runner import OverpassUnavailable
 from osm.wikipedia import enrich
 
 
-def main(arg: str) -> None:
+def main(arg: str, with_wikipedia: bool = True) -> None:
     try:
         request = Path(arg).read_text() if Path(arg).is_file() else arg
     except OSError:  # e.g. a long text that is not a valid file name
@@ -20,12 +20,14 @@ def main(arg: str) -> None:
         sys.exit(f"Need more information: {exc}")
     except OverpassUnavailable as exc:
         sys.exit(f"Overpass server problem (not an empty result): {exc}")
-    result.results = enrich(result.results)
+    if with_wikipedia:
+        result.results = enrich(result.results)
     print(f"-- attempts: {result.attempts}\n{result.query}\n")
     print(result.model_dump_json(include={"results"}, indent=2))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit('usage: python -m osm "<text>" | <file.txt>')
-    main(sys.argv[1])
+    args = [a for a in sys.argv[1:] if a != "--no-wikipedia"]
+    if len(args) != 1:
+        sys.exit('usage: python -m osm [--no-wikipedia] "<text>" | <file.txt>')
+    main(args[0], with_wikipedia="--no-wikipedia" not in sys.argv[1:])

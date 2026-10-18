@@ -121,38 +121,61 @@ def run_function(tool: str, body: dict[str, Any] | None) -> None:
     st.session_state.debug_output[tool] = {"request": body, "response": response}
 
 
+def place_row(place: dict[str, Any]) -> dict[str, Any]:
+    """One table row for a place from `search.places`."""
+    tags = place.get("tags", {})
+    wikipedia = place.get("wikipedia") or {}
+    street = " ".join(filter(None, (tags.get("addr:street"), tags.get("addr:housenumber"))))
+    link = next((w["url"] for lang in ("en", "pl") if (w := wikipedia.get(lang))), None)
+    return {
+        "name": place.get("name"),
+        "kind": place.get("category"),
+        "address": street,
+        "website": tags.get("website") or tags.get("contact:website"),
+        "wikipedia": link,
+        "langs": ", ".join(wikipedia),
+        "lat": place.get("lat"),
+        "lon": place.get("lon"),
+    }
+
+
 def render_search(search: dict[str, Any] | None) -> None:
-    """Show a `search` object from /chat: status, the summary sent to find_places, places."""
+    """Show a `search` object from /chat: counts, the Overpass query, the results, the trip."""
     if not search:
         return
     places = search.get("places") or []
     if search.get("error"):
         st.warning(f"Enough information, but the search failed: {search['error']}")
     else:
-        st.success(f"✅ Enough information: showing {len(places)} of {search['total']} places")
-    with st.expander("Search details"):
-        st.markdown("**Summary sent to find_places**")
+        st.success(
+            f"✅ Enough information: Overpass returned {search.get('fetched', '?')} elements, "
+            f"{search['total']} distinct places, showing {len(places)}"
+        )
+    if search.get("query"):
+        attempts = search.get("query_attempts", 1)
+        fixes = (
+            f" (after {attempts - 1} syntax fix{'es' if attempts > 2 else ''})"
+            if attempts > 1
+            else ""
+        )
+        st.markdown(f"**Generated Overpass query**{fixes}")
+        st.code(search["query"], language="sql")
+    if places:
+        st.markdown(f"**Results ({len(places)})**")
+        rows = [place_row(p) for p in places]
+        st.dataframe(
+            rows,
+            hide_index=True,
+            column_config={
+                "website": st.column_config.LinkColumn("website"),
+                "wikipedia": st.column_config.LinkColumn("wikipedia", display_text="open"),
+            },
+        )
+        points = [{"lat": r["lat"], "lon": r["lon"]} for r in rows if r["lat"] and r["lon"]]
+        if points:
+            st.map(points, size=30)
+    with st.expander("Summary sent to find_places and trip"):
         st.info(search["summary"])
-        if places:
-            st.dataframe(
-                [
-                    {
-                        "name": p.get("name"),
-                        "kind": next(
-                            (
-                                p["tags"][k]
-                                for k in ("amenity", "tourism", "historic", "leisure")
-                                if k in p.get("tags", {})
-                            ),
-                            "",
-                        ),
-                        "wikipedia": ", ".join(p.get("wikipedia") or {}),
-                    }
-                    for p in places
-                ],
-                hide_index=True,
-            )
-        st.markdown("**Trip**")
         st.json(search["trip"])
 
 

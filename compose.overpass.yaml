@@ -1,0 +1,24 @@
+services:
+  overpass:
+    image: wiktorn/overpass-api:latest
+    container_name: overpass-mazowieckie
+    restart: unless-stopped
+    ports:
+      - "12345:80"
+    volumes:
+      - ./overpass_db:/db
+    environment:
+      OVERPASS_MODE: init
+      OVERPASS_META: "no"          # "yes" adds editor metadata; ~25-50% slower init
+      OVERPASS_RULES_LOAD: "10"    # area-rule load (see README for tuning)
+
+      # Mazowieckie extract from Geofabrik (PBF)
+      OVERPASS_PLANET_URL: "https://download.geofabrik.de/europe/poland/mazowieckie-latest.osm.pbf"
+      # Matching diff feed so the instance stays up to date
+      OVERPASS_DIFF_URL: "https://download.geofabrik.de/europe/poland/mazowieckie-updates/"
+
+      # Overpass imports XML, so convert PBF -> .osm.bz2 before indexing
+      OVERPASS_PLANET_PREPROCESS: >-
+        mv /db/planet.osm.bz2 /db/planet.osm.pbf &&
+        osmium cat -o /db/planet.osm.bz2 /db/planet.osm.pbf &&
+        rm /db/planet.osm.pbf
