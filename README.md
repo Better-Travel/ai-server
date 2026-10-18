@@ -113,6 +113,40 @@ the backend only covers Warsaw. A start date alone is one day, and long trips us
 - `BACKEND_URL` (default `http://localhost:8080`; start it with `docker compose up` in
   `backend-server`). `BETTY_EVENTS_TOOL=false` turns the lookup off.
 
+## Sight narration and the guide (interruptions)
+
+For a traveller standing at a sight, the server provides a fixed narration and answers questions
+asked while it is spoken. The **client reads the text aloud and keeps the cursor**; the server is
+stateless.
+
+1. `GET /api/v1/narration?lang=en&title=Warsaw Barbican` returns the Wikipedia intro cleaned
+   for speech (pronunciation guides, citation marks and foreign-name parentheses removed) as
+   numbered `segments` of whole sentences (each up to about 250 characters, never across a
+   paragraph), plus the licence `attribution` to show or speak. It is the same text for every
+   user. 404: no such article (or a disambiguation page); 422: bad language.
+2. While segment `n` is being spoken the traveller asks something:
+   `POST /api/v1/narration/ask` with `{place: {lang, title}, cursor: n, question, history}`
+   (`history` = earlier questions and answers at this place; `cursor` = the number of segments
+   if the narration had already finished). The response is
+   `{answer, used_web, sources, resume: {from_segment, bridge}, finished}`. The client speaks the
+   answer, then `bridge` (a short phrase in the narration's language, for example "Back to
+   Warsaw Barbican."), then continues from `resume.from_segment` (the interrupted segment, so
+   no sentence is cut off). After the end `resume` is `null`. Each question is independent, so
+   interrupting several times works.
+3. The guide (`app/services/guide_service.py`) is shown the last 3 segments before the cursor
+   (the interrupted one marked) and the whole Wikipedia article, and answers in plain spoken
+   prose in the language of the question, with the length fitted to the question (no fixed limit). It only goes to the web, through a
+   `search_web` tool backed by Tavily (`app/services/web_search.py`, at most
+   `GUIDE_MAX_SEARCHES` = 2 searches, results treated as untrusted text), when the article does
+   not contain the answer; without `TAVILY_API_KEY` it answers from the article only. It uses
+   `GUIDE_MODEL` (default `BETTY_MODEL`) on the NVIDIA API and no output cap.
+4. The Streamlit page has a **Guide** panel that stands in for the audio client: load a place,
+   step through the segments, interrupt with a question and see the answer, sources and where
+   the narration resumes.
+
+Answers can take a while: the NVIDIA endpoint is slow (tens of seconds per model call), and a
+question that needs a web search makes two calls. Clients should play a short filler while waiting.
+
 ## Endpoints
 
 The server is stateless: send the full history on each call.

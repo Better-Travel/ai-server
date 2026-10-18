@@ -199,6 +199,67 @@ class EventSearch(BaseModel):
     error: str | None = Field(default=None, description="Set when the lookup failed.")
 
 
+class GuidePlace(BaseModel):
+    """A sight to narrate: its Wikipedia language and exact article title."""
+
+    lang: str = Field(min_length=2, max_length=12, description="Wikipedia language, e.g. 'pl'.")
+    title: str = Field(min_length=1, max_length=300, description="Exact Wikipedia article title.")
+
+
+class NarrationSegment(BaseModel):
+    id: int
+    text: str
+
+
+class NarrationResponse(BaseModel):
+    """The text to read aloud at a sight, in order; the client keeps the cursor."""
+
+    title: str
+    lang: str
+    url: str
+    attribution: str = Field(description="Wikipedia's licence credit; show or speak it.")
+    segments: list[NarrationSegment]
+
+
+class AskRequest(BaseModel):
+    """A question asked while the narration of a place was being spoken."""
+
+    place: GuidePlace
+    cursor: int = Field(
+        ge=0,
+        description="Index of the segment being spoken when the traveller interrupted; "
+        "the number of segments if the narration had already finished.",
+    )
+    question: str = Field(min_length=1, max_length=500)
+    history: list[Message] = Field(
+        default_factory=list,
+        max_length=12,
+        description="Earlier questions and answers at this place, oldest first.",
+    )
+
+
+class WebSource(BaseModel):
+    title: str
+    url: str
+
+
+class Resume(BaseModel):
+    from_segment: int = Field(description="Continue the narration from this segment.")
+    bridge: str = Field(description="Short phrase to speak before resuming; may be empty.")
+
+
+class AskResponse(BaseModel):
+    """The guide's spoken answer, and where the narration resumes."""
+
+    answer: str
+    used_web: bool = False
+    sources: list[WebSource] = Field(default_factory=list)
+    resume: Resume | None = Field(
+        default=None, description="Null when the narration had already finished."
+    )
+    finished: bool = False
+
+
 class ChatRequest(BaseModel):
     """Conversation history so far; the last message must come from the user."""
 

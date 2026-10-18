@@ -341,7 +341,7 @@ def test_empty_model_response_is_retried_once() -> None:
 
 
 def test_two_empty_model_responses_fail() -> None:
-    from app.services.betty_service import BettyError
+    from app.services.llm_loop import BettyError
 
     with pytest.raises(BettyError, match="empty response"):
         make_service(Script(text(""), text(""))).chat(USER)

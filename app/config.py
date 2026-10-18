@@ -31,6 +31,13 @@ class Settings(BaseSettings):
         default="http://localhost:8080", description="Base URL of the BetterTravel backend."
     )
     betty_max_tool_rounds: int = Field(default=3, gt=0)
+    guide_model: str | None = Field(
+        default=None, description="Model for the sight guide; defaults to BETTY_MODEL."
+    )
+    guide_max_searches: int = Field(default=2, ge=1, le=5, description="Web searches per answer.")
+    tavily_api_key: str | None = Field(
+        default=None, description="Tavily key; without it the guide cannot search the web."
+    )
     log_level: str = Field(default="INFO", description="DEBUG, INFO, WARNING, ...")
     request_timeout_seconds: float = Field(default=60.0, gt=0)
 
