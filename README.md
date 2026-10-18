@@ -22,12 +22,15 @@ With the API running, in a second terminal:
 uv run streamlit run ui/streamlit_app.py
 ```
 
-The API URL defaults to `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar
+Requests wait up to 600 s (`BETTY_API_TIMEOUT`), since a turn that searches often takes 1-3
+minutes. The API URL defaults to `http://localhost:8000` (override with `BETTY_API_URL` or the sidebar
 field).
 
 The page has two columns. **Left:** the chat with Betty, with a small **Copy** button next to her
 name that copies the history as JSON, and the last search (summary sent to `find_places`, places,
-trip) under the chat. **Right:** the two API functions side by side (Summarize, Search check). Each has an input box (request JSON, a bare message list, or plain text sent as
+route, trip) under the chat. The route map has a **Build step** slider that replays how the route
+was built (`routes[0].steps`): the LLM's must-visits first (red), then each place added on the way
+(orange; the one added at that step in blue, with its detour), then the final reorder. **Right:** the two API functions side by side (Summarize, Search check). Each has an input box (request JSON, a bare message list, or plain text sent as
 one user message) and two buttons: **Run with input** and **Run with chat history**, which uses the
 live conversation. The output appears under each function, with the request sent and the raw
 response. (Search check calls `/api/v1/chat`, so with chat history it re-runs the latest user turn;
@@ -68,8 +71,15 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
    At most 30 sights and attractions go back to Betty and the client (food and drink are excluded): Wikipedia-tagged ones first, then a mix of kinds;
    cropping logs a warning (interim). The prompt also tells the model to leave memorial plaques
    and stolpersteine out of `historic=memorial`, since Warsaw has thousands.
-4. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`) and suggests only
-   returned places.
+4. **Route** (`app/services/route_planner.py`): one LLM call (same model and keys as the query
+   writer) picks 2-5 must-visit places for this traveller and scores the others 1-3 (`why` for
+   each). Code orders the must-visits into the shortest open path (nearest neighbour from every
+   start + 2-opt, straight-line distances), then adds the scored places that lie on the way, best
+   score per metre of detour first: at most 800 m extra each (relaxed until the route has 5
+   stops), a repeated category halves a place's value, 10 stops max. If the LLM fails, the first
+   3 places in find_places order are the must-visits. Places without coordinates are skipped.
+5. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`, with `route` = the
+   stops' names and reasons in order) and suggests only returned places.
 
 - The query-writing model needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`);
   `NVIDIA_MODEL` selects it. Each call times out after `REQUEST_TIMEOUT_SECONDS` (default 60)
@@ -95,12 +105,15 @@ The server is stateless: send the full history on each call.
 - `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}]}` →
   `{"reply": "...", "search": null | {...}}`. `search` is set only on a turn where Betty had enough
   information and searched:
-  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, wikipedia}], "error": null}`.
+  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, wikipedia}], "routes": [{"stops": [{osm_id, name, category, lat, lon, role, why}], "distance_km": 3.4}], "error": null}`.
   `error` is set when the trip was accepted but the search failed. Keep the last `search` on the
   client; Betty searches again when the trip changes.
   - `osm_id` is the stable OSM id (`"node/123"`, `"way/456"`): use it to dedupe, save favourites
     or refresh a place. `category` is the place's kind as one tag (`"tourism=museum"`, or
     `"other"`). `total` counts distinct places, after duplicates are dropped.
+  - `routes` holds at most one route for now (a list so alternatives can be added). Draw
+    `stops` in order; `role` is `"must"` or `"on_the_way"`, `why` is a short reason (null in
+    the fallback). `distance_km` is straight-line, so real walking is longer.
   - `tags` keeps only: `amenity`, `tourism`, `historic`, `leisure`, `cuisine`, `opening_hours`,
     `website`, `contact:website`, `phone`, `contact:phone`, `name:en`, `addr:street`,
     `addr:housenumber`, `addr:postcode`, `wikidata`, `wheelchair`, `diet:vegetarian`,

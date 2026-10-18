@@ -1,8 +1,8 @@
 # Mobile integration: gap analysis and plan
 
 > **Current scope (2026-10-18):** for now the mobile app needs only one thing from the server:
-> an **ordered list of coordinates** for the route. The server-side routing that produces it is
-> being implemented; its exact field name and shape will be added here when it lands. Everything
+> an **ordered list of coordinates** for the route. It is `search.routes[0].stops[]` (`lat`, `lon`,
+> in visiting order; see "Mapping to the app's domain" in mobile-chat-api.md). Everything
 > else below (streaming, voice mode, language, place details) is the longer-term plan and is not
 > needed yet.
 

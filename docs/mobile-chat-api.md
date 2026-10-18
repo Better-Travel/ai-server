@@ -1,8 +1,8 @@
 # Betty chat API for the mobile app
 
 > **Current scope (2026-10-18):** for now the mobile app needs only one thing from the server:
-> an **ordered list of coordinates** for the route. The server-side routing that produces it is
-> being implemented; its exact field name and shape will be added here when it lands. Everything
+> an **ordered list of coordinates** for the route. It is `search.routes[0].stops[]` (`lat`, `lon`,
+> in visiting order; see "Mapping to the app's domain" in mobile-chat-api.md). Everything
 > else below (streaming, voice mode, language, place details) is the longer-term plan and is not
 > needed yet.
 
@@ -218,6 +218,7 @@ enough information and searched.
       }
     }
   ],
+  "routes": [{"distance_km": 3.4, "stops": [{"osm_id": "way/123", "name": "...", "category": "historic=castle", "lat": 52.2479, "lon": 21.0152, "role": "must", "why": "..."}]}],
   "error": null
 }
 ```
@@ -244,9 +245,18 @@ Unknown fields may be added later: keep `ignoreUnknownKeys = true`.
 
 - **Map pins**: every place in `search.places` with coordinates. Highlight the ones in
   `mentioned_place_ids`.
-- **Route**: the server will return the route as an ordered list of coordinates (being
-  implemented on the server; shape to follow). The app draws it in that order. Until then, do not
-  build routes on the device.
+- **Route**: `search.routes[0]` (the list is empty when no place has coordinates). Draw
+  `stops` in order; each stop has `osm_id` (full details are in `search.places`), `name`,
+  `category`, `lat`, `lon`, `role` (`"must"` or `"on_the_way"`) and `why` (short reason, may be
+  null). `distance_km` is the straight-line length; walking is longer. Do not build routes on the
+  device.
+
+  ```json
+  "routes": [{"distance_km": 3.4, "stops": [
+    {"osm_id": "way/123", "name": "Zamek Królewski w Warszawie", "category": "historic=castle",
+     "lat": 52.2479, "lon": 21.0152, "role": "must", "why": "The royal castle, a must for history lovers."}
+  ]}]
+  ```
 - **Bookmarks**: use `osm_id` as `BookmarkedPlace.id` instead of `name@lat,lon`.
 - **Last search**: keep the most recent non-null `search` with the conversation and send it back
   as `last_search`.

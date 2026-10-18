@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     betty_model: str = Field(default="nemotron-3.5", description="Chat model name.")
     betty_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    betty_max_tokens: int = Field(default=1024, gt=0)
     betty_places_tool: bool = Field(
         default=True, description="Run the OpenStreetMap search inside search_places."
     )

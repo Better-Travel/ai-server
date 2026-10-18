@@ -14,6 +14,7 @@ from app.prompts import build_chat_prompt
 from app.schemas import Message, Place, Trip
 from app.services.betty_service import BettyService
 from app.services.place_finder import FoundPlaces
+from app.services.route_planner import RouteBuilder
 from app.services.search_places_tool import TOOL_NAME, parse_trip
 
 START = date.today() + timedelta(days=200)
@@ -158,7 +159,18 @@ def make_service(
 ) -> BettyService:
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
     settings = Settings(nvidia_api_key_2="x", betty_places_tool=places_enabled, _env_file=None)
-    return BettyService(settings, client=client, place_finder=finder)
+    return BettyService(
+        settings, client=client, place_finder=finder, route_planner=offline_routes()
+    )
+
+
+def offline_routes() -> RouteBuilder:
+    """Route builder whose LLM is down, so it always uses the find_places order (no network)."""
+
+    def down(messages: list[dict[str, Any]]) -> str:
+        raise RuntimeError("no LLM in tests")
+
+    return RouteBuilder(lambda: down)
 
 
 def tool_message(script: Script) -> dict[str, Any]:
@@ -188,8 +200,10 @@ def test_search_runs_summary_then_find_places() -> None:
     assert search is not None
     assert search.summary == expected
     assert (search.total, search.places, search.error) == (57, [CAFE], None)
+    assert [stop.osm_id for stop in search.routes[0].stops] == ["node/1"]
     seen = tool_message(script)
     assert seen["status"] == "ok" and seen["places"][0]["name"] == "Cafe A"
+    assert seen["route"] == [{"name": "Cafe A"}]
 
 
 def test_summariser_sees_the_whole_conversation() -> None:
@@ -301,6 +315,7 @@ def test_api_returns_the_search() -> None:
     assert body["search"]["trip"]["city"] == "Warsaw"
     assert body["search"]["summary"] == trip().describe()
     assert body["search"]["places"][0]["name"] == "Cafe A"
+    assert body["search"]["routes"][0]["stops"][0]["lat"] == 52.2
     assert body["search"]["error"] is None
 
 

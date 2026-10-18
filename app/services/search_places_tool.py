@@ -5,11 +5,12 @@ whole conversation and runs find_places on that summary (see BettyService.chat).
 """
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import ValidationError
 
-from app.schemas import Trip
+from app.schemas import Route, Trip
 from app.services.place_finder import FoundPlaces
 
 TOOL_NAME = "search_places"
@@ -49,17 +50,21 @@ def rejected_result(problems: list[str]) -> str:
     return json.dumps({"status": "rejected", "problems": problems})
 
 
-def search_result(summary: str, found: FoundPlaces) -> str:
+def search_result(summary: str, found: FoundPlaces, routes: Sequence[Route] = ()) -> str:
     """Tool result after a search attempt, in one envelope Betty can act on."""
     if found.status != "ok":
         return json.dumps({"status": found.status, "message": found.message, "summary": summary})
-    return json.dumps(
-        {
-            "status": "ok",
-            "summary": summary,
-            "total": found.total,
-            "shown": len(found.places),
-            "places": [p.model_dump(exclude_none=True) for p in found.places],
-        },
-        ensure_ascii=False,
-    )
+    result: dict[str, Any] = {
+        "status": "ok",
+        "summary": summary,
+        "total": found.total,
+        "shown": len(found.places),
+        "places": [p.model_dump(exclude_none=True) for p in found.places],
+    }
+    if routes:
+        # Betty only needs the order and the reasons; the client gets coordinates in `search`.
+        result["route"] = [
+            {"name": stop.name, "why": stop.why} if stop.why else {"name": stop.name}
+            for stop in routes[0].stops
+        ]
+    return json.dumps(result, ensure_ascii=False)

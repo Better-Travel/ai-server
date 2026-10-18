@@ -18,6 +18,7 @@ from app.prompts import (
 )
 from app.schemas import Message, PlaceSearch, Trip
 from app.services.place_finder import FoundPlaces, PlaceFinder, PlaceSearcher
+from app.services.route_planner import RouteBuilder, RoutePlanner
 from app.services.search_places_tool import TOOL_NAME as SEARCH_TOOL_NAME
 from app.services.search_places_tool import TOOL_SPEC as SEARCH_TOOL_SPEC
 from app.services.search_places_tool import parse_trip, rejected_result, search_result
@@ -49,12 +50,16 @@ class BettyService:
         settings: Settings,
         client: OpenAI | None = None,
         place_finder: PlaceSearcher | None = None,
+        route_planner: RoutePlanner | None = None,
     ) -> None:
         self._settings = settings
         self._find_places: PlaceSearcher | None = (
             (place_finder if place_finder is not None else PlaceFinder())
             if settings.betty_places_tool
             else None
+        )
+        self._plan_route: RoutePlanner = (
+            route_planner if route_planner is not None else RouteBuilder()
         )
         if client is None:
             if not settings.nvidia_api_key_2:
@@ -130,6 +135,13 @@ class BettyService:
             len(found.places),
             found.message,
         )
+        routes = self._plan_route(summary, found.places) if found.places else []
+        if routes:
+            logger.info(
+                "route: %s (%.2f km)",
+                [stop.name for stop in routes[0].stops],
+                routes[0].distance_km,
+            )
         search = PlaceSearch(
             trip=trip,
             summary=summary,
@@ -138,9 +150,10 @@ class BettyService:
             fetched=found.fetched,
             total=found.total,
             places=found.places,
+            routes=routes,
             error=None if found.status == "ok" else found.message,
         )
-        return search, search_result(summary, found)
+        return search, search_result(summary, found, routes)
 
     def _complete(
         self,
@@ -172,7 +185,6 @@ class BettyService:
                     temperature=self._settings.betty_temperature
                     if temperature is None
                     else temperature,
-                    max_tokens=self._settings.betty_max_tokens,
                     **kwargs,
                 )
             except Exception as exc:  # openai raises a broad family of API/connection errors

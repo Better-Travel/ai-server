@@ -132,3 +132,53 @@ def test_search_is_shown_and_its_trip_is_sent_to_summarize(
     assert any("after 1 syntax fix" in m.value for m in at.markdown)
     button(at, "run_history_summarize").click().run()
     assert calls[-1][1]["trip"] == TRIP
+
+
+def test_route_build_steps_can_be_replayed(
+    calls: list[tuple[str, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    global searching
+    searching = True
+    stop = {"category": "historic=castle", "lat": 52.25, "lon": 21.01, "why": "Royal"}
+    route = {
+        "distance_km": 0.5,
+        "stops": [
+            {**stop, "osm_id": "way/1", "name": "Castle", "role": "must"},
+            {**stop, "osm_id": "node/2", "name": "Gate", "role": "on_the_way", "lat": 52.251},
+        ],
+        "steps": [
+            {"action": "anchors", "order": ["way/1"]},
+            {"action": "add", "osm_id": "node/2", "detour_m": 120, "order": ["way/1", "node/2"]},
+        ],
+    }
+    monkeypatch.setitem(SEARCH, "routes", [route])
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    chat_once(at)
+    assert any("Added **Gate** on the way, +120 m" in c.value for c in at.caption)
+    at.slider(key="route_step_chat").set_value(1).run()
+    assert any("LLM must-visits, in shortest order: Castle" in c.value for c in at.caption)
+
+
+def test_returned_route_is_shown_in_the_chat_in_order(
+    calls: list[tuple[str, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    global searching
+    searching = True
+    stop = {"category": "historic=castle", "lat": 52.25, "lon": 21.01, "role": "must"}
+    route = {
+        "distance_km": 1.2,
+        "stops": [
+            {**stop, "osm_id": "way/1", "name": "Castle", "why": "Royal"},
+            {**stop, "osm_id": "node/2", "name": "Gate", "lat": 52.251},
+        ],
+    }
+    monkeypatch.setitem(SEARCH, "routes", [route])
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    chat_once(at)
+    texts = [m.value for m in at.markdown]
+    assert any("Your route**: 2 stops, 1.2 km" in t for t in texts)
+    assert "1. **Castle** – Royal\n2. **Gate**" in texts
+    # The route stays under Betty's message on later turns, and is not sent back to the API.
+    chat_once(at)
+    assert sum("Your route" in m.value for m in at.markdown) == 2
+    assert all(set(m) == {"role", "content"} for m in calls[-1][1]["messages"])

@@ -132,6 +132,46 @@ class Place(BaseModel):
     )
 
 
+class RouteStop(BaseModel):
+    """One stop of a route; full details are in `places` under the same `osm_id`."""
+
+    osm_id: str
+    name: str | None = None
+    category: str
+    lat: float
+    lon: float
+    role: Literal["must", "on_the_way"] = Field(
+        description="'must': a key place for this traveller; 'on_the_way': added because it is "
+        "close to the path between them."
+    )
+    why: str | None = Field(default=None, description="Short reason shown to the traveller.")
+
+
+class RouteBuildStep(BaseModel):
+    """One step of building a route (debugging/visualisation only)."""
+
+    action: Literal["anchors", "add", "reorder"] = Field(
+        description="'anchors': the must-visits in shortest order; 'add': one place inserted on "
+        "the way; 'reorder': the final shortest order of all stops."
+    )
+    osm_id: str | None = Field(default=None, description="The place added ('add' only).")
+    detour_m: float | None = Field(default=None, description="Extra metres it cost ('add' only).")
+    order: list[str] = Field(description="osm_ids of the route after this step, in order.")
+
+
+class Route(BaseModel):
+    """An ordered walk through some of the found places."""
+
+    stops: list[RouteStop]
+    distance_km: float = Field(
+        description="Straight-line length through the stops in order; real walking is longer."
+    )
+    steps: list[RouteBuildStep] = Field(
+        default_factory=list,
+        description="How the route was built, for debugging; clients can ignore it.",
+    )
+
+
 class PlaceSearch(BaseModel):
     """Outcome of a search_places call that passed validation (the 'enough info' signal)."""
 
@@ -150,6 +190,10 @@ class PlaceSearch(BaseModel):
     places: list[Place] = Field(
         default_factory=list,
         description="Sights and attractions only (no food), max 30, notable ones first.",
+    )
+    routes: list[Route] = Field(
+        default_factory=list,
+        description="Suggested routes through `places`, best first (currently at most one).",
     )
     error: str | None = Field(
         default=None, description="Set when the trip was accepted but the search failed."
