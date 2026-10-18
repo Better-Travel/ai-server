@@ -1,4 +1,4 @@
-"""Betty: the trip-planning assistant backed by NVIDIA's OpenAI-compatible API."""
+"""Betty: the trip-planning assistant, backed by an OpenAI-compatible chat API."""
 
 import logging
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -41,6 +41,7 @@ from app.services.llm_loop import (
     ToolFinished,
     ToolLoop,
     ToolStarted,
+    build_client,
 )
 from app.services.place_finder import FoundPlaces, PlaceFinder, PlaceSearcher
 from app.services.route_planner import RouteBuilder, RoutePlanner
@@ -102,13 +103,7 @@ class BettyService:
             route_planner if route_planner is not None else RouteBuilder()
         )
         if client is None:
-            if not settings.nvidia_api_key_2:
-                raise BettyError("NVIDIA_API_KEY_2 is not set.")
-            client = OpenAI(
-                api_key=settings.nvidia_api_key_2,
-                base_url=settings.nvidia_base_url,
-                timeout=settings.request_timeout_seconds,
-            )
+            client = build_client(settings)
         self._client = client
         self._loop = ToolLoop(
             client,

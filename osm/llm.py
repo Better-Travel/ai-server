@@ -5,9 +5,10 @@ from typing import Any, cast
 from dotenv import load_dotenv
 from openai import APIStatusError, OpenAI
 
-NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 logger = logging.getLogger(__name__)
-DEFAULT_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+# Any OpenAI-compatible chat endpoint works: set LLM_BASE_URL and LLM_API_KEY (or GEMINI_API_KEY).
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 # Same variable and default as app.config.Settings.request_timeout_seconds. Without a timeout the
 # SDK waits 600 s and retries twice, which could block a chat turn for about half an hour.
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -15,27 +16,22 @@ MAX_RETRIES = 1
 
 
 def model_name() -> str:
-    return os.environ.get("NVIDIA_MODEL", DEFAULT_MODEL)
+    """The model that writes the Overpass queries (`QUERY_MODEL`)."""
+    return os.environ.get("QUERY_MODEL", DEFAULT_MODEL)
 
 
 def make_clients() -> list[OpenAI]:
     load_dotenv()
-    keys = [
-        os.environ[name]
-        for name in ("NVIDIA_API_KEY_1", "NVIDIA_API_KEY_2")
-        if os.environ.get(name)
-    ]
-    if not keys:
-        raise RuntimeError("NVIDIA_API_KEY_1 is not set (expected in .env)")
+    key = os.environ.get("LLM_API_KEY") or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("LLM_API_KEY (or GEMINI_API_KEY) is not set (expected in .env)")
     timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))
-    return [
-        OpenAI(base_url=NVIDIA_BASE_URL, api_key=key, timeout=timeout, max_retries=MAX_RETRIES)
-        for key in keys
-    ]
+    base_url = os.environ.get("LLM_BASE_URL", GEMINI_BASE_URL)
+    return [OpenAI(base_url=base_url, api_key=key, timeout=timeout, max_retries=MAX_RETRIES)]
 
 
 class FallbackClient:
-    """Minimal chat-completions wrapper that moves to the next key on 401/403/429."""
+    """Minimal chat-completions wrapper that moves to the next client on 401/403/429."""
 
     def __init__(self, clients: list[OpenAI]):
         self._clients = clients

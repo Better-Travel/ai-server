@@ -63,7 +63,7 @@ class FakeSearch:
 
 def make_guide(script: Script, searcher: FakeSearch | None = None, **settings: Any) -> GuideService:
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
-    config = Settings(nvidia_api_key_2="x", _env_file=None, **settings)
+    config = Settings(llm_api_key="x", _env_file=None, **settings)
     return GuideService(config, NarrationService(fetch=fake_fetch), client, searcher)
 
 
@@ -149,7 +149,7 @@ def test_the_model_used_defaults_to_betty_s_and_can_be_overridden() -> None:
     script = Script(text("A."), text("B."))
     ask(make_guide(script))
     ask(make_guide(script, guide_model="other/model"))
-    assert [c["model"] for c in script.calls] == ["nemotron-3.5", "other/model"]
+    assert [c["model"] for c in script.calls] == ["gemini-3.1-flash-lite", "other/model"]
 
 
 # ---- web search
@@ -272,3 +272,10 @@ def test_ask_endpoint_errors(payload: dict[str, Any], status: int) -> None:
 
 def test_ask_endpoint_reports_a_failing_model() -> None:
     assert post(make_guide(Script(RuntimeError("down"))), body()).status_code == 502
+
+
+def test_the_guide_is_told_to_search_before_saying_it_does_not_know() -> None:
+    from app.prompts import GUIDE_SYSTEM_PROMPT
+
+    assert "MUST call" in GUIDE_SYSTEM_PROMPT and "search_web" in GUIDE_SYSTEM_PROMPT
+    assert "as I was saying" in GUIDE_SYSTEM_PROMPT  # told not to resume the narration itself

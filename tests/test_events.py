@@ -301,7 +301,7 @@ def chat(
         replies.append(text(pick))
     script = Script(*replies, text("Anything interesting?"))
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
-    settings = Settings(nvidia_api_key_2="x", betty_events_tool=enabled, _env_file=None)
+    settings = Settings(llm_api_key="x", betty_events_tool=enabled, _env_file=None)
     finder = FakeFinder(places or FoundPlaces(status="ok", total=1, places=[CAFE]))
     service = BettyService(
         settings,
@@ -500,6 +500,6 @@ def test_no_output_cap_is_sent_by_default() -> None:
 def test_a_configured_cap_is_still_honoured() -> None:
     script = Script(text("Hello"))
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
-    settings = Settings(nvidia_api_key_2="x", betty_max_tokens=300, _env_file=None)
+    settings = Settings(llm_api_key="x", betty_max_tokens=300, _env_file=None)
     BettyService(settings, client=client).chat([Message(role="user", content="hi")])
     assert script.calls[0]["max_tokens"] == 300
