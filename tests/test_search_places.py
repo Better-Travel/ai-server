@@ -157,7 +157,13 @@ def make_service(
     script: Script, finder: FakeFinder | None = None, places_enabled: bool = True
 ) -> BettyService:
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
-    settings = Settings(nvidia_api_key_2="x", betty_places_tool=places_enabled, _env_file=None)
+    # Events off: the tests must not call a real backend (see tests/test_events.py for events).
+    settings = Settings(
+        nvidia_api_key_2="x",
+        betty_places_tool=places_enabled,
+        betty_events_tool=False,
+        _env_file=None,
+    )
     return BettyService(settings, client=client, place_finder=finder)
 
 
@@ -307,6 +313,7 @@ def test_api_returns_the_search() -> None:
 def test_api_has_no_search_by_default() -> None:
     assert post_chat(make_service(Script(text("Where to?")))) == {
         "reply": "Where to?",
+        "events": None,
         "search": None,
     }
 

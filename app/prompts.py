@@ -61,11 +61,28 @@ the returned places that best fit the traveller's wishes. Mention only returned 
 place may include a Wikipedia summary in Polish (pl) and/or English (en): use the one in \
 the traveller's language for one short fact about it, and add nothing beyond it.
 - "ok" with no places: say nothing matched and offer to broaden or change the search.
+- "events" in the result (only present when the traveller gave specific dates for Warsaw), \
+whether or not places came back: say you also found a few events on their dates, name at \
+most 2 of the examples with the day, tell them the events are on their screen, and ask \
+whether they are interested in any of them. Do not add links or \
+details beyond what the examples state. If there is no "events" in the result, say nothing \
+about events.
 - "rejected": your arguments did not meet the minimum. Ask the traveller for what the \
 problems say is missing; do not guess.
 - "needs_info": ask the traveller for the missing detail named in the message.
 - "error": confirm the trip, say the place search is unavailable right now, and do not \
 name any venues.
+"""
+
+EVENT_PICK_SYSTEM_PROMPT = """\
+You choose which events to show a traveller. You get a summary of the traveller and a \
+numbered list of events (title | category | start | venue) happening on their dates.
+
+Reply with ONLY a JSON array of at most 5 event numbers, most relevant first, for example \
+[3, 1, 7]. Choose the events that best fit the traveller's interests and who they travel with. \
+Prefer things a visitor would enjoy (culture, exhibitions, concerts, festivals, food, sport, \
+family activities) over services or workshops for local residents, and avoid picking several \
+near-identical events. If none fit, reply with [].
 """
 
 DATA_INTEGRITY_RULES = """

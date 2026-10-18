@@ -1,6 +1,6 @@
 """Pydantic request/response models for the REST API."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -156,6 +156,49 @@ class PlaceSearch(BaseModel):
     )
 
 
+class EventOccurrence(BaseModel):
+    """One run of an event, in Warsaw local time."""
+
+    start: datetime
+    end: datetime
+
+
+class Event(BaseModel):
+    """One city event from the BetterTravel backend, trimmed to the requested dates."""
+
+    title: str
+    url: str
+    categories: list[str] = Field(default_factory=list)
+    venues: list[str] = Field(default_factory=list, description="Location names.")
+    addresses: list[str] = Field(default_factory=list)
+    lat: float | None = None
+    lon: float | None = None
+    description: str | None = None
+    repeatable: bool = False
+    occurrences: list[EventOccurrence] = Field(
+        default_factory=list, description="Only runs that overlap the requested dates (max 5)."
+    )
+    occurrences_in_range: int = Field(default=0, description="How many runs overlap the dates.")
+    ongoing: bool = Field(
+        default=False,
+        description="True if every run overlapping the dates began before them (e.g. an "
+        "exhibition or programme that is already running), not a dated happening inside them.",
+    )
+
+
+class EventSearch(BaseModel):
+    """Events found on a trip's specific dates (shown to the traveller by the client)."""
+
+    city: str
+    from_date: date
+    to_date: date
+    total: int = Field(default=0, description="Events overlapping the dates, before the cap.")
+    events: list[Event] = Field(
+        default_factory=list, description="At most 5, the ones most relevant to the traveller."
+    )
+    error: str | None = Field(default=None, description="Set when the lookup failed.")
+
+
 class ChatRequest(BaseModel):
     """Conversation history so far; the last message must come from the user."""
 
@@ -163,9 +206,12 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Betty's next reply, plus the place search if she ran one this turn."""
+    """Betty's next reply, plus the place search and event lookup if she ran them this turn."""
 
     reply: str
+    events: EventSearch | None = Field(
+        default=None, description="Set only on a turn where Betty looked up city events."
+    )
     search: PlaceSearch | None = Field(
         default=None,
         description="Set only on a turn where Betty had enough information and searched.",

@@ -31,6 +31,7 @@ api_url: str = st.sidebar.text_input("API URL", DEFAULT_API_URL).rstrip("/")
 for key, default in (
     ("messages", []),
     ("search", None),
+    ("events", None),
     ("debug_output", {}),
 ):
     if key not in st.session_state:
@@ -179,6 +180,41 @@ def render_search(search: dict[str, Any] | None) -> None:
         st.json(search["trip"])
 
 
+def event_row(event: dict[str, Any]) -> dict[str, Any]:
+    """One table row for an event from `events.events`."""
+    runs = event.get("occurrences") or []
+    first = runs[0]["start"][:16].replace("T", " ") if runs else ""
+    more = event.get("occurrences_in_range", len(runs)) - 1
+    return {
+        "title": event.get("title"),
+        "when": f"{first} (+{more} more)" if more > 0 else first,
+        "venue": ", ".join(event.get("venues") or []),
+        "address": ", ".join(event.get("addresses") or []),
+        "category": ", ".join(event.get("categories") or []),
+        "link": event.get("url"),
+    }
+
+
+def render_events(events: dict[str, Any] | None) -> None:
+    """Show an `events` object from /chat: the dates asked for, and the events found."""
+    if not events:
+        return
+    found = events.get("events") or []
+    if events.get("error"):
+        st.warning(f"Event lookup failed: {events['error']}")
+        return
+    st.success(
+        f"📅 Events in {events['city']}, {events['from_date']} to {events['to_date']}: "
+        f"showing {len(found)} of {events['total']}"
+    )
+    if found:
+        st.dataframe(
+            [event_row(e) for e in found],
+            hide_index=True,
+            column_config={"link": st.column_config.LinkColumn("link", display_text="open")},
+        )
+
+
 def render_output(tool: str) -> None:
     result = st.session_state.debug_output.get(tool)
     if result is None or result["response"] is None:
@@ -189,8 +225,9 @@ def render_output(tool: str) -> None:
     else:
         if response.get("search"):
             render_search(response["search"])
-        else:
+        elif not response.get("events"):
             st.warning("No search this turn: Betty needs more information")
+        render_events(response.get("events"))
         st.write(f"**Betty's reply:** {response.get('reply', '')}")
     with st.expander("Request sent"):
         st.json(result["request"])
@@ -201,6 +238,7 @@ def render_output(tool: str) -> None:
 if st.sidebar.button("Reset conversation"):
     st.session_state.messages = []
     st.session_state.search = None
+    st.session_state.events = None
     st.session_state.debug_output = {}
     st.rerun()
 
@@ -230,6 +268,8 @@ if prompt:
     if data:
         if data.get("search"):
             st.session_state.search = data["search"]
+        if data.get("events"):
+            st.session_state.events = data["events"]
         st.session_state.messages.append({"role": "assistant", "content": data["reply"]})
         st.rerun()  # redraw so the header's copy button and the right side see the new turn
     st.session_state.messages.pop()  # drop the unanswered turn so the user can retry
@@ -242,6 +282,7 @@ with header:
 
 with status_box:
     render_search(st.session_state.search)
+    render_events(st.session_state.events)
 
 # ---- right: functions
 with right:

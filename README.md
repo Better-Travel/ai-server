@@ -88,6 +88,31 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
 - Try `find_places` alone: `uv run python -m osm sample_request.txt` or
   `uv run python -m osm "Coffee and castles in Kraków, Poland"`
 
+## Events on the trip's dates (BetterTravel backend)
+
+When Betty runs `search_places` for a trip with **specific dates** (a start date, plus an end
+date or a number of days) in Warsaw, the server also asks our backend
+(`backend-server`, `GET /api/better-travel/warsaw/events?from=&to=`) for events on those dates
+(`app/services/event_finder.py`). There is no separate tool for Betty to call, and a trip with
+only a number of days has no dates, so nothing is looked up. Other cities are skipped, because
+the backend only covers Warsaw. A start date alone is one day, and long trips use their first
+14 days.
+
+- The backend returns every run of an event (often a whole year), so only runs overlapping the
+  dates are kept, in Warsaw local time. The finder ranks them (dated, categorised events first,
+  Kultura / Czas wolny / Sport before residents' services such as health or business, taking
+  turns between categories; events already running before the dates are flagged `ongoing` and
+  come last) and keeps 15 candidates. The model then picks the **at most 5** that fit the
+  traveller's summary best (`EVENT_PICK_SYSTEM_PROMPT`); if that call fails or its answer is
+  unusable, the first 5 ranked candidates are used.
+- The frontend gets those events as structured data in `events` (`city`, `from_date`,
+  `to_date`, `total` = all events on the dates, `events` = at most 5, `error`), shown under the
+  chat in the Streamlit UI. Betty sees the same 5 as short examples; she says she found a few,
+  names up to two and asks whether the traveller is interested in any (they are on screen).
+  Failures never break the chat: `events.error` is set and Betty says nothing about events.
+- `BACKEND_URL` (default `http://localhost:8080`; start it with `docker compose up` in
+  `backend-server`). `BETTY_EVENTS_TOOL=false` turns the lookup off.
+
 ## Endpoints
 
 The server is stateless: send the full history on each call.
