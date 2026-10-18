@@ -14,6 +14,30 @@ uv run uvicorn app.main:app --reload
 
 `BETTY_MODEL` (default `nemotron-3.5`) selects the model.
 
+## Docker
+
+The API runs in a container (`Dockerfile`, `compose.yaml`), configured from the same `.env`:
+
+```bash
+cp .env.example .env            # set NVIDIA_API_KEY_2 (and the other keys you use)
+docker compose up -d --build    # API on http://localhost:8000
+docker compose --profile ui up -d --build   # also the Streamlit UI on http://localhost:8501
+docker compose logs -f api
+```
+
+- Two images from one `Dockerfile`: `betty-api` (the default target: FastAPI + uvicorn, no
+  Streamlit or dev tools) and `betty-ui` (`--target ui`). Dependencies come from `uv.lock`, the
+  containers run as a non-root user, and the API has a health check on `/health`.
+- Inside a container `localhost` is the container itself. Compose therefore replaces
+  `OVERPASS_URLS` and `BACKEND_URL` from `.env` with addresses on the host
+  (`host.docker.internal`): by default the local Overpass from `compose.overpass.yaml` first, then
+  the public `overpass-api.de`, and the events backend on port 8080. To change them, set
+  `DOCKER_OVERPASS_URLS` / `DOCKER_BACKEND_URL` in `.env` or the shell.
+- Port 8000 or 8501 already taken (e.g. by `uv run uvicorn`)? Stop that first, or change the
+  host side of `ports` in `compose.yaml`.
+- Without compose: `docker build -t betty-api . && docker run --env-file .env -p 8000:8000
+  --add-host host.docker.internal:host-gateway -e OVERPASS_URLS=... betty-api`.
+
 ## Local web UI (Streamlit)
 
 With the API running, in a second terminal:

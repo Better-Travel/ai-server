@@ -1,0 +1,13 @@
+# Only pyproject.toml, uv.lock, app/, osm/ and ui/ go into the image.
+.env
+.venv
+.git
+.claude
+CLAUDE.local.md
+overpass_db
+__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+tests
+docs

@@ -24,7 +24,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
-    { name = "streamlit" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -33,6 +32,9 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
+]
+ui = [
+    { name = "streamlit" },
 ]
 
 [package.metadata]
@@ -43,7 +45,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "pydantic-settings", specifier = ">=2.16.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "streamlit", specifier = ">=1.66.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
 
@@ -53,6 +54,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.17.1" },
 ]
+ui = [{ name = "streamlit", specifier = ">=1.66.0" }]
 
 [[package]]
 name = "altair"

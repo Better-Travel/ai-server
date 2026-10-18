@@ -11,7 +11,6 @@ dependencies = [
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.0",
     "python-dotenv>=1.2.4",
-    "streamlit>=1.66.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -21,6 +20,13 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]
+# The local Streamlit UI (ui/). Not in the API image; `uv sync` installs it by default.
+ui = [
+    "streamlit>=1.66.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "ui"]
 
 [tool.ruff]
 line-length = 100

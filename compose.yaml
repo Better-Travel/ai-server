@@ -1,0 +1,41 @@
+# Betty API in a container: docker compose up --build   (UI too: docker compose --profile ui up)
+# Settings come from .env (see .env.example). The local Overpass instance has its own file:
+# docker compose -f compose.overpass.yaml up -d
+services:
+  api:
+    build:
+      context: .
+      target: api
+    image: betty-api
+    container_name: betty-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Inside the container `localhost` is the container itself, so services running on the
+      # host are reached through host.docker.internal. Override these with DOCKER_OVERPASS_URLS
+      # and DOCKER_BACKEND_URL (in the shell or in .env); they replace OVERPASS_URLS and
+      # BACKEND_URL from .env, which usually point at localhost.
+      # Default: the local Overpass (compose.overpass.yaml) first, then the public server.
+      OVERPASS_URLS: ${DOCKER_OVERPASS_URLS:-http://host.docker.internal:12345/api/interpreter,https://overpass-api.de/api/interpreter}
+      BACKEND_URL: ${DOCKER_BACKEND_URL:-http://host.docker.internal:8080}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ui:
+    build:
+      context: .
+      target: ui
+    image: betty-ui
+    container_name: betty-ui
+    profiles: ["ui"]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      BETTY_API_URL: http://api:8000
