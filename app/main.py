@@ -74,7 +74,17 @@ def chat(request: ChatRequest, betty: BettyDep) -> ChatResponse:
             f"{len(search.places)}/{search.total}" if search else None,
             search.error if search else None,
         )
-        return ChatResponse(reply=result.reply, search=search)
+        if result.events:
+            logger.info(
+                "chat events: %s %s..%s shown=%d total=%d error=%r",
+                result.events.city,
+                result.events.from_date,
+                result.events.to_date,
+                len(result.events.events),
+                result.events.total,
+                result.events.error,
+            )
+        return ChatResponse(reply=result.reply, search=search, events=result.events)
     except BettyError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 

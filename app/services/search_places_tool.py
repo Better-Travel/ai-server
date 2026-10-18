@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.schemas import Route, Trip
+from app.schemas import EventOccurrence, EventSearch, Route, Trip
 from app.services.place_finder import FoundPlaces
 
 TOOL_NAME = "search_places"
@@ -20,7 +20,8 @@ TOOL_SPEC: dict[str, Any] = {
         "name": TOOL_NAME,
         "description": (
             "Search OpenStreetMap for real sights and attractions that fit this trip (it does not "
-            "return restaurants, cafes or bars). Call it only when the "
+            "return restaurants, cafes or bars). When the trip has specific dates and is in "
+            "Warsaw, the result also lists events on those dates. Call it only when the "
             "destination (one city or district, with its country) and the timing (dates or a "
             "number of days) are known. Pass only these confirmed facts: the server reads the "
             "whole conversation (interests, companions, budget, ...) and builds the search "
@@ -50,21 +51,56 @@ def rejected_result(problems: list[str]) -> str:
     return json.dumps({"status": "rejected", "problems": problems})
 
 
-def search_result(summary: str, found: FoundPlaces, routes: Sequence[Route] = ()) -> str:
-    """Tool result after a search attempt, in one envelope Betty can act on."""
-    if found.status != "ok":
-        return json.dumps({"status": found.status, "message": found.message, "summary": summary})
-    result: dict[str, Any] = {
-        "status": "ok",
-        "summary": summary,
-        "total": found.total,
-        "shown": len(found.places),
-        "places": [p.model_dump(exclude_none=True) for p in found.places],
+MAX_EVENT_EXAMPLES = 5
+
+
+def _when(run: EventOccurrence) -> str:
+    if run.start.date() == run.end.date():
+        return f"{run.start:%Y-%m-%d %H:%M}-{run.end:%H:%M}"
+    return f"{run.start:%Y-%m-%d %H:%M} to {run.end:%Y-%m-%d %H:%M}"
+
+
+def _events_for_betty(events: EventSearch) -> dict[str, Any]:
+    """What Betty sees of the events: the count and a few examples (the client gets them all)."""
+    return {
+        "total": events.total,
+        "shown": len(events.events),
+        "examples": [
+            {
+                "title": event.title,
+                "when": _when(event.occurrences[0]),
+                "venue": ", ".join(event.venues),
+                "category": ", ".join(event.categories),
+            }
+            for event in events.events[:MAX_EVENT_EXAMPLES]
+        ],
     }
+
+
+def search_result(
+    summary: str,
+    found: FoundPlaces,
+    events: EventSearch | None = None,
+    routes: Sequence[Route] = (),
+) -> str:
+    """Tool result after a search attempt, in one envelope Betty can act on.
+
+    `events` (events found on the trip's dates) is added only if there are some, and `route`
+    (the first suggested route) only if one was planned.
+    """
+    result: dict[str, Any] = {"status": found.status, "summary": summary}
+    if found.status != "ok":
+        result["message"] = found.message
+    else:
+        result["total"] = found.total
+        result["shown"] = len(found.places)
+        result["places"] = [p.model_dump(exclude_none=True) for p in found.places]
     if routes:
         # Betty only needs the order and the reasons; the client gets coordinates in `search`.
         result["route"] = [
             {"name": stop.name, "why": stop.why} if stop.why else {"name": stop.name}
             for stop in routes[0].stops
         ]
+    if events and events.events and not events.error:
+        result["events"] = _events_for_betty(events)
     return json.dumps(result, ensure_ascii=False)

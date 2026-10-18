@@ -12,11 +12,20 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from app.config import Settings
 from app.prompts import (
+    EVENT_PICK_SYSTEM_PROMPT,
     PREFERENCES_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT,
     build_chat_prompt,
 )
-from app.schemas import Message, PlaceSearch, Trip
+from app.schemas import Event, EventSearch, Message, PlaceSearch, Trip
+from app.services.event_finder import (
+    MAX_EVENTS,
+    EventFinder,
+    EventSearcher,
+    describe_candidates,
+    parse_picks,
+    trip_dates,
+)
 from app.services.place_finder import FoundPlaces, PlaceFinder, PlaceSearcher
 from app.services.route_planner import RouteBuilder, RoutePlanner
 from app.services.search_places_tool import TOOL_NAME as SEARCH_TOOL_NAME
@@ -40,6 +49,7 @@ class ChatResult:
 
     reply: str
     search: PlaceSearch | None = None
+    events: EventSearch | None = None
 
 
 class BettyService:
@@ -50,9 +60,19 @@ class BettyService:
         settings: Settings,
         client: OpenAI | None = None,
         place_finder: PlaceSearcher | None = None,
+        event_finder: EventSearcher | None = None,
         route_planner: RoutePlanner | None = None,
     ) -> None:
         self._settings = settings
+        self._find_events: EventSearcher | None = (
+            (
+                event_finder
+                if event_finder is not None
+                else EventFinder(settings.backend_url, settings.request_timeout_seconds)
+            )
+            if settings.betty_events_tool
+            else None
+        )
         self._find_places: PlaceSearcher | None = (
             (place_finder if place_finder is not None else PlaceFinder())
             if settings.betty_places_tool
@@ -75,11 +95,17 @@ class BettyService:
         """Return Betty's next reply; `search` is set when she had enough info and searched."""
         searches: list[PlaceSearch] = []
 
+        event_searches: list[EventSearch] = []
+
         def search_places(arguments: str) -> str:
             trip = parse_trip(arguments)
             if not isinstance(trip, Trip):
                 return rejected_result(trip)
-            search, tool_result = self._search(messages, trip)
+            summary = self._summary(messages, trip)
+            events = self._events_for(trip, summary)
+            if events is not None:
+                event_searches.append(events)
+            search, tool_result = self._search(trip, summary, events)
             searches.append(search)
             return tool_result
 
@@ -89,7 +115,11 @@ class BettyService:
             tools=[SEARCH_TOOL_SPEC],
             handlers={SEARCH_TOOL_NAME: search_places},
         )
-        return ChatResult(reply=reply, search=searches[-1] if searches else None)
+        return ChatResult(
+            reply=reply,
+            search=searches[-1] if searches else None,
+            events=event_searches[-1] if event_searches else None,
+        )
 
     def summarize(self, messages: Sequence[Message], trip: Trip | None = None) -> str:
         """Condense the conversation into one plain-text paragraph.
@@ -113,14 +143,60 @@ class BettyService:
             return trip.describe()
         return f"{trip.describe()} {preferences[:MAX_PREFERENCES_CHARS]}"
 
-    def _search(self, messages: Sequence[Message], trip: Trip) -> tuple[PlaceSearch, str]:
-        """Summarise the conversation, run find_places on it; return the outcome + tool text."""
+    def _events_for(self, trip: Trip, summary: str) -> EventSearch | None:
+        """Up to MAX_EVENTS relevant events on the trip's specific dates (Warsaw only)."""
+        dates = trip_dates(trip)
+        if self._find_events is None or dates is None:
+            return None
+        logger.info("find_events: %s %s..%s", trip.city, *dates)
+        found = self._find_events(trip.city, *dates)
+        if found.status == "unsupported":
+            return None
+        return EventSearch(
+            city=trip.city,
+            from_date=dates[0],
+            to_date=dates[1],
+            total=found.total,
+            events=self._pick_events(summary, found.events),
+            error=None if found.status == "ok" else found.message,
+        )
+
+    def _pick_events(self, summary: str, candidates: list[Event]) -> list[Event]:
+        """The MAX_EVENTS candidates that fit the traveller best (the model chooses).
+
+        If the model fails or answers with something unusable, the first candidates win: they
+        are already ranked (dated, traveller-friendly categories first, a mix of kinds).
+        """
+        if len(candidates) <= 1:
+            return candidates
+        request = Message(
+            role="user",
+            content=f"Traveller: {summary}\n\nEvents:\n{describe_candidates(candidates)}",
+        )
         try:
-            summary = self.summarize(messages, trip)
+            reply = self._complete(EVENT_PICK_SYSTEM_PROMPT, [request], temperature=0.0)
+            picks = parse_picks(reply, len(candidates))
+        except (BettyError, ValueError) as exc:
+            logger.warning("event relevance pick failed, using the ranked order: %s", exc)
+            picks = None
+        if picks is None:
+            return candidates[:MAX_EVENTS]
+        logger.info("event picks: %s of %d candidates", [p + 1 for p in picks], len(candidates))
+        return [candidates[i] for i in picks]
+
+    def _summary(self, messages: Sequence[Message], trip: Trip) -> str:
+        """The conversation summary sent to find_places; the trip facts alone if that fails."""
+        try:
+            return self.summarize(messages, trip)
         except BettyError as exc:
             # The validated facts alone are still a correct (if less specific) search.
             logger.warning("summary failed, searching with the trip facts only: %s", exc)
-            summary = trip.describe()
+            return trip.describe()
+
+    def _search(
+        self, trip: Trip, summary: str, events: EventSearch | None = None
+    ) -> tuple[PlaceSearch, str]:
+        """Run find_places on the summary; return the outcome + the text Betty sees."""
         if self._find_places is None:
             found = FoundPlaces(
                 status="error", message="Place search is disabled (BETTY_PLACES_TOOL=false)."
@@ -153,7 +229,7 @@ class BettyService:
             routes=routes,
             error=None if found.status == "ok" else found.message,
         )
-        return search, search_result(summary, found, routes)
+        return search, search_result(summary, found, events, routes)
 
     def _complete(
         self,
@@ -174,6 +250,8 @@ class BettyService:
         retried_empty = False
         for round_number in range(max_rounds + 1):
             kwargs: dict[str, Any] = {}
+            if self._settings.betty_max_tokens:
+                kwargs["max_tokens"] = self._settings.betty_max_tokens
             # On the final round stop offering tools so the model must answer in text.
             if tools and round_number < max_rounds:
                 kwargs["tools"] = list(tools)

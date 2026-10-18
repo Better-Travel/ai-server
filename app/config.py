@@ -15,8 +15,20 @@ class Settings(BaseSettings):
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     betty_model: str = Field(default="nemotron-3.5", description="Chat model name.")
     betty_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    betty_max_tokens: int | None = Field(
+        default=None,
+        gt=0,
+        description="Optional cap on output tokens per model call. Unset means no cap: the model "
+        "reasons before it answers and returns nothing if a cap is used up by that reasoning.",
+    )
     betty_places_tool: bool = Field(
         default=True, description="Run the OpenStreetMap search inside search_places."
+    )
+    betty_events_tool: bool = Field(
+        default=True, description="Look up events on the trip's dates (Warsaw) when a search runs."
+    )
+    backend_url: str = Field(
+        default="http://localhost:8080", description="Base URL of the BetterTravel backend."
     )
     betty_max_tool_rounds: int = Field(default=3, gt=0)
     log_level: str = Field(default="INFO", description="DEBUG, INFO, WARNING, ...")
