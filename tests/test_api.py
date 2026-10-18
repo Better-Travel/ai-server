@@ -30,7 +30,7 @@ def fake() -> FakeCompletions:
 @pytest.fixture
 def client(fake: FakeCompletions) -> Iterator[TestClient]:
     openai_like = SimpleNamespace(chat=SimpleNamespace(completions=fake))
-    settings = Settings(nvidia_api_key_2="x", betty_model="test-model", _env_file=None)
+    settings = Settings(llm_api_key="x", betty_model="test-model", _env_file=None)
     service = BettyService(settings, client=openai_like)  # type: ignore[arg-type]
     app.dependency_overrides[get_betty_service] = lambda: service
     yield TestClient(app)
@@ -72,7 +72,8 @@ def test_missing_api_key_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
 
     _build_service.cache_clear()
     get_settings.cache_clear()
-    monkeypatch.delenv("NVIDIA_API_KEY_2", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setattr(Settings, "model_config", {**Settings.model_config, "env_file": None})
     try:
         r = TestClient(app).post(
@@ -88,3 +89,20 @@ def test_root_redirects_to_docs(client: TestClient) -> None:
     r = client.get("/", follow_redirects=False)
     assert r.status_code == 307
     assert r.headers["location"] == "/docs"
+
+
+def test_llm_settings_default_to_gemini_and_accept_either_key_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.llm_loop import build_client
+
+    for name in ("LLM_API_KEY", "GEMINI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    settings = Settings(_env_file=None)
+    assert settings.llm_api_key == "gem-key" and settings.betty_model == "gemini-3.1-flash-lite"
+    client = build_client(settings)
+    assert str(client.base_url) == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    monkeypatch.setenv("LLM_API_KEY", "other")
+    assert Settings(_env_file=None).llm_api_key == "other"
+    assert Settings(llm_api_key="direct", _env_file=None).llm_api_key == "direct"

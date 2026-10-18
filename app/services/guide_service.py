@@ -15,7 +15,7 @@ from openai import OpenAI
 from app.config import Settings
 from app.prompts import GUIDE_SYSTEM_PROMPT, SEARCH_WEB_TOOL
 from app.schemas import Message
-from app.services.llm_loop import BettyError, ToolLoop
+from app.services.llm_loop import ToolLoop, build_client
 from app.services.narration import Narration, NarrationService
 from app.services.web_search import SearchError, TavilySearch, WebResult, WebSearcher
 
@@ -79,13 +79,7 @@ class GuideService:
             searcher = TavilySearch(settings.tavily_api_key)
         self._searcher = searcher
         if client is None:
-            if not settings.nvidia_api_key_2:
-                raise BettyError("NVIDIA_API_KEY_2 is not set.")
-            client = OpenAI(
-                api_key=settings.nvidia_api_key_2,
-                base_url=settings.nvidia_base_url,
-                timeout=settings.request_timeout_seconds,
-            )
+            client = build_client(settings)
         self._loop = ToolLoop(
             client,
             settings.guide_model or settings.betty_model,

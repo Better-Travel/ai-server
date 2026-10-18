@@ -271,3 +271,73 @@ def test_api_passes_places_temperature_to_the_search() -> None:
 def test_api_rejects_places_temperature_above_one() -> None:
     response = post_stream(make_service(StreamScript([chunk("Hi")])), places_temperature=1.5)
     assert response.status_code == 422
+
+
+# ---- endpoints that attach extra data to tool calls (Gemini 3 "thought signatures")
+
+
+SIGNATURE = {"google": {"thought_signature": "opaque-signature"}}
+
+
+def gemini_piece(arguments: str, id: str, extra: dict[str, Any] | None = None) -> SimpleNamespace:
+    """A Gemini streamed tool call: one complete call per piece, with no index."""
+    return SimpleNamespace(
+        index=None,
+        id=id,
+        function=SimpleNamespace(name=TOOL_NAME, arguments=arguments),
+        model_extra={"extra_content": extra} if extra else {},
+    )
+
+
+def sent_tool_calls(script: Script) -> list[dict[str, Any]]:
+    """The tool calls of the assistant message that the follow-up request carried."""
+    request = next(
+        c for c in reversed(script.calls) if any(m.get("tool_calls") for m in c["messages"])
+    )
+    return list(next(m for m in request["messages"] if m.get("tool_calls"))["tool_calls"])
+
+
+def test_a_streamed_tool_call_without_an_index_keeps_its_signature() -> None:
+    script = StreamScript(
+        [chunk(calls=[gemini_piece(args(), "g1", SIGNATURE)])], text("NONE"), [chunk("Done.")]
+    )
+    events = list(make_service(script, FakeFinder(FoundPlaces(status="ok"))).chat_stream(USER))
+    assert deltas(events).endswith("Done.")
+    [sent] = sent_tool_calls(script)
+    assert sent["id"] == "g1" and sent["extra_content"] == SIGNATURE
+    assert sent["function"]["arguments"] == args()
+
+
+def test_parallel_streamed_calls_without_an_index_stay_separate_calls() -> None:
+    first, second = args(city="Warsaw"), args(city="Krakow")
+    script = StreamScript(
+        [chunk(calls=[gemini_piece(first, "g1", SIGNATURE), gemini_piece(second, "g2")])],
+        text("NONE"),  # one summary per search_places call
+        text("NONE"),
+        [chunk("Done.")],
+    )
+    list(make_service(script, FakeFinder(FoundPlaces(status="ok"))).chat_stream(USER))
+    sent = sent_tool_calls(script)
+    assert [(c["id"], c["function"]["arguments"]) for c in sent] == [("g1", first), ("g2", second)]
+    assert sent[0]["extra_content"] == SIGNATURE and "extra_content" not in sent[1]
+
+
+def test_indexed_streamed_calls_are_still_assembled_from_pieces() -> None:
+    pieces = [call(args()[:10], id="c1"), call(args()[10:], name=None, id=None)]
+    script = StreamScript([chunk(calls=pieces)], text("NONE"), [chunk("Done.")])
+    list(make_service(script, FakeFinder(FoundPlaces(status="ok"))).chat_stream(USER))
+    [sent] = sent_tool_calls(script)
+    assert sent["function"] == {"name": TOOL_NAME, "arguments": args()}
+    assert "extra_content" not in sent
+
+
+def test_a_blocking_tool_call_signature_is_sent_back() -> None:
+    signed = SimpleNamespace(
+        id="b1",
+        function=SimpleNamespace(name=TOOL_NAME, arguments=args()),
+        model_extra={"extra_content": SIGNATURE},
+    )
+    script = Script(SimpleNamespace(content=None, tool_calls=[signed]), text("NONE"), text("Done."))
+    make_service(script, FakeFinder(FoundPlaces(status="ok"))).chat(USER)
+    [sent] = sent_tool_calls(script)
+    assert sent["id"] == "b1" and sent["extra_content"] == SIGNATURE

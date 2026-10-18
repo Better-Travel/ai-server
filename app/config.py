@@ -2,18 +2,28 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from osm.llm import DEFAULT_MODEL, GEMINI_BASE_URL
 
 
 class Settings(BaseSettings):
     """Runtime settings. Every field can be overridden through the environment."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", populate_by_name=True
+    )
 
-    nvidia_api_key_2: str | None = Field(default=None, description="NVIDIA Integrate API key.")
-    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
-    betty_model: str = Field(default="nemotron-3.5", description="Chat model name.")
+    llm_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("LLM_API_KEY", "GEMINI_API_KEY"),
+        description="API key for the OpenAI-compatible chat endpoint (Gemini by default).",
+    )
+    llm_base_url: str = Field(
+        default=GEMINI_BASE_URL, description="OpenAI-compatible chat endpoint (Gemini by default)."
+    )
+    betty_model: str = Field(default=DEFAULT_MODEL, description="Chat model name.")
     betty_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     betty_max_tokens: int | None = Field(
         default=None,

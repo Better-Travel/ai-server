@@ -1,25 +1,29 @@
 # Big City Life — Betty AI server
 
 FastAPI service for **Betty**, a friendly local-guide assistant that gathers trip details and
-finds real places for the trip in OpenStreetMap. Uses the OpenAI SDK against NVIDIA's Integrate
-API.
+finds real places for the trip in OpenStreetMap. Uses the OpenAI SDK against Google's
+OpenAI-compatible Gemini endpoint (any other OpenAI-compatible endpoint works, see below).
 
 ## Setup
 
 ```bash
 uv sync
-cp .env.example .env   # set NVIDIA_API_KEY_2
+cp .env.example .env   # set GEMINI_API_KEY
 uv run uvicorn app.main:app --reload
 ```
 
-`BETTY_MODEL` (default `nemotron-3.5`) selects the model.
+`BETTY_MODEL` (default `gemini-3.1-flash-lite`) selects the model. All model calls (Betty, the
+OSM query writer, the sight guide) go through one OpenAI-compatible endpoint, `LLM_BASE_URL`
+(default Google's `https://generativelanguage.googleapis.com/v1beta/openai/`) with `GEMINI_API_KEY`
+(or `LLM_API_KEY`). To use another provider such as NVIDIA, set `LLM_BASE_URL`, `LLM_API_KEY`,
+`BETTY_MODEL` and `QUERY_MODEL` (examples in `.env.example`).
 
 ## Docker
 
 The API runs in a container (`Dockerfile`, `compose.yaml`), configured from the same `.env`:
 
 ```bash
-cp .env.example .env            # set NVIDIA_API_KEY_2 (and the other keys you use)
+cp .env.example .env            # set GEMINI_API_KEY (and the other keys you use)
 docker compose up -d --build    # API on http://localhost:8000
 docker compose --profile ui up -d --build   # also the Streamlit UI on http://localhost:8501
 docker compose logs -f api
@@ -121,8 +125,8 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
 5. Betty gets one result envelope (`ok` / `rejected` / `needs_info` / `error`, with `route` = the
    stops' names and reasons in order) and suggests only returned places.
 
-- The query-writing model needs `NVIDIA_API_KEY_1` (falls back to `NVIDIA_API_KEY_2`);
-  `NVIDIA_MODEL` selects it. Each call times out after `REQUEST_TIMEOUT_SECONDS` (default 60)
+- The query-writing model uses the same key and endpoint; `QUERY_MODEL` selects it (default
+  `gemini-3.1-flash-lite`). Each call times out after `REQUEST_TIMEOUT_SECONDS` (default 60)
   and is retried once. `BETTY_PLACES_TOOL=false` skips the OSM search (the trip is still
   validated and summarised).
 - Places whose OSM `wikipedia=lang:Title` tag is set are looked up on Wikipedia by that exact
@@ -189,12 +193,12 @@ stateless.
    `search_web` tool backed by Tavily (`app/services/web_search.py`, at most
    `GUIDE_MAX_SEARCHES` = 2 searches, results treated as untrusted text), when the article does
    not contain the answer; without `TAVILY_API_KEY` it answers from the article only. It uses
-   `GUIDE_MODEL` (default `BETTY_MODEL`) on the NVIDIA API and no output cap.
+   `GUIDE_MODEL` (default `BETTY_MODEL`) on the same endpoint and no output cap.
 4. The Streamlit page has a **Guide** panel that stands in for the audio client: load a place,
    step through the segments, interrupt with a question and see the answer, sources and where
    the narration resumes.
 
-Answers can take a while: the NVIDIA endpoint is slow (tens of seconds per model call), and a
+Answers can take a while (a model call takes seconds, longer on a busy endpoint), and a
 question that needs a web search makes two calls. Clients should play a short filler while waiting.
 
 ## Endpoints

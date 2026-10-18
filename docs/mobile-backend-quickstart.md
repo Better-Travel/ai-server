@@ -13,7 +13,7 @@ cd ai-server
 cp .env.example .env
 ```
 
-In `.env`, set `NVIDIA_API_KEY_2` (and `NVIDIA_API_KEY_1` if you have it). Ask the AI-server
+In `.env`, set `GEMINI_API_KEY` (the Google Gemini key). Ask the AI-server
 team for the keys and never commit `.env`. The other settings can stay as they are.
 
 ```bash
@@ -61,7 +61,7 @@ with `routes[0].stops`, the ordered coordinates of the route.
 - **Port 8000 is already in use**: stop whatever uses it, or change `"8000:8000"` to for example
   `"8001:8000"` in `compose.yaml` and use port 8001 in the app.
 - **`error` event with `upstream_unavailable`**: the model API key in `.env` is missing or wrong
-  (check `docker compose logs api`), or NVIDIA is slow. Run `docker compose up -d` again after
+  (check `docker compose logs api`), or the model API is slow. Run `docker compose up -d` again after
   changing `.env`.
 - **Searches are slow**: normal for now, a turn that searches takes 1-3 minutes. Keep the app's
   HTTP socket timeout at 30 s or more and don't set an overall request timeout (see "Timing" in

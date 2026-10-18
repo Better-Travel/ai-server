@@ -4,11 +4,12 @@ import json
 import logging
 from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
+from app.config import Settings
 from app.schemas import Message
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,17 @@ class Finished:
 
 
 LoopEvent = TextDelta | ToolStarted | ToolFinished | Finished
+
+
+def build_client(settings: Settings) -> OpenAI:
+    """The OpenAI-SDK client for the configured chat endpoint (Gemini unless LLM_BASE_URL says)."""
+    if not settings.llm_api_key:
+        raise BettyError("LLM_API_KEY (or GEMINI_API_KEY) is not set.")
+    return OpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        timeout=settings.request_timeout_seconds,
+    )
 
 
 class ToolLoop:
@@ -101,7 +113,7 @@ class ToolLoop:
             if not tool_calls:
                 content = message.content if message else None
                 if not content or not content.strip():
-                    # The NVIDIA endpoint occasionally returns no content; one retry fixes it.
+                    # Some endpoints occasionally return no content; one retry fixes it.
                     if not retried_empty:
                         retried_empty = True
                         logger.warning("empty model response, retrying once")
@@ -110,21 +122,22 @@ class ToolLoop:
                 return str(content).strip()
             assert message is not None
             payload.append(
-                {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        {
-                            "id": call.id,
-                            "type": "function",
-                            "function": {
-                                "name": call.function.name,
-                                "arguments": call.function.arguments,
-                            },
-                        }
-                        for call in tool_calls
-                    ],
-                }
+                cast(
+                    ChatCompletionMessageParam,
+                    {
+                        "role": "assistant",
+                        "content": message.content,
+                        "tool_calls": [
+                            _tool_call_param(
+                                call.id,
+                                call.function.name,
+                                call.function.arguments,
+                                (getattr(call, "model_extra", None) or {}).get("extra_content"),
+                            )
+                            for call in tool_calls
+                        ],
+                    },
+                )
             )
             for call in tool_calls:
                 result = _run_tool(handlers, call.function.name, call.function.arguments)
@@ -159,7 +172,8 @@ class ToolLoop:
             except Exception as exc:  # openai raises a broad family of API/connection errors
                 raise BettyError(f"Upstream model request failed: {exc}") from exc
             round_text = ""
-            calls: dict[int, dict[str, str]] = {}
+            calls: dict[int | str, dict[str, Any]] = {}
+            last_key: int | str | None = None
             try:
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
@@ -167,10 +181,21 @@ class ToolLoop:
                         continue
                     # A call's id and name come in its first piece, the arguments in pieces.
                     for piece in getattr(delta, "tool_calls", None) or []:
+                        # OpenAI numbers the calls (`index`). Some endpoints (Gemini) send no
+                        # index and one complete call per piece: then each new id starts a call.
+                        if piece.index is not None:
+                            key: int | str = piece.index
+                        elif piece.id or last_key is None:
+                            key = piece.id or "call"
+                        else:
+                            key = last_key
+                        last_key = key
                         call = calls.setdefault(
-                            piece.index, {"id": "", "name": "", "arguments": ""}
+                            key, {"id": "", "name": "", "arguments": "", "extra": None}
                         )
                         call["id"] = piece.id or call["id"]
+                        extra = (getattr(piece, "model_extra", None) or {}).get("extra_content")
+                        call["extra"] = extra or call["extra"]
                         if piece.function is not None:
                             call["name"] += piece.function.name or ""
                             call["arguments"] += piece.function.arguments or ""
@@ -198,7 +223,7 @@ class ToolLoop:
             reply += round_text
             if not calls:
                 if not round_text.strip():
-                    # The NVIDIA endpoint occasionally returns no content; one retry fixes it.
+                    # Some endpoints occasionally return no content; one retry fixes it.
                     if not retried_empty:
                         retried_empty = True
                         logger.warning("empty model response, retrying once")
@@ -206,20 +231,21 @@ class ToolLoop:
                     raise BettyError("Model returned an empty response.")
                 yield Finished(reply.strip())
                 return
-            ordered = [calls[index] for index in sorted(calls)]
+            ordered = list(calls.values())  # in the order the model wrote them
             payload.append(
-                {
-                    "role": "assistant",
-                    "content": round_text or None,
-                    "tool_calls": [
-                        {
-                            "id": call["id"],
-                            "type": "function",
-                            "function": {"name": call["name"], "arguments": call["arguments"]},
-                        }
-                        for call in ordered
-                    ],
-                }
+                cast(
+                    ChatCompletionMessageParam,
+                    {
+                        "role": "assistant",
+                        "content": round_text or None,
+                        "tool_calls": [
+                            _tool_call_param(
+                                call["id"], call["name"], call["arguments"], call["extra"]
+                            )
+                            for call in ordered
+                        ],
+                    },
+                )
             )
             for call in ordered:
                 yield ToolStarted(call["name"])
@@ -240,6 +266,24 @@ class ToolLoop:
         if tools and round_number < self._max_rounds:
             kwargs["tools"] = list(tools)
         return kwargs
+
+
+def _tool_call_param(
+    call_id: str, name: str, arguments: str, extra_content: Any = None
+) -> dict[str, Any]:
+    """A tool call for the next request. `extra_content` is sent back exactly as received.
+
+    Gemini 3 puts a "thought signature" there (`extra_content.google.thought_signature`) and
+    answers the next request with HTTP 400 if a function call comes back without it.
+    """
+    param: dict[str, Any] = {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments},
+    }
+    if extra_content:
+        param["extra_content"] = extra_content
+    return param
 
 
 def _payload(system_prompt: str, messages: Sequence[Message]) -> list[ChatCompletionMessageParam]:

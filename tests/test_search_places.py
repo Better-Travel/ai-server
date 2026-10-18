@@ -162,7 +162,7 @@ def make_service(
     client: Any = SimpleNamespace(chat=SimpleNamespace(completions=script))
     # Events off: the tests must not call a real backend (see tests/test_events.py for events).
     settings = Settings(
-        nvidia_api_key_2="x",
+        llm_api_key="x",
         betty_places_tool=places_enabled,
         betty_events_tool=False,
         _env_file=None,
