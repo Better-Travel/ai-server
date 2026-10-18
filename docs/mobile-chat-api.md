@@ -18,10 +18,11 @@ conversation, and the app owns the history.
 |---|---|
 | Android emulator | `http://10.0.2.2:8000` |
 | iOS simulator | `http://localhost:8000` |
-| Device on the same Wi-Fi | `http://<laptop IP>:8000` (start the server with `--host 0.0.0.0`) |
+| Device on the same Wi-Fi | `http://<laptop IP>:8000` |
 
-Start the server with `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000`. Its interactive
-docs are at `{baseUrl}/docs`.
+To run the server on your machine (Docker, one command), see
+[mobile-backend-quickstart.md](mobile-backend-quickstart.md). Its interactive docs are at
+`{baseUrl}/docs`.
 
 ## Endpoints
 

@@ -35,6 +35,7 @@ docker compose logs -f api
   `DOCKER_OVERPASS_URLS` / `DOCKER_BACKEND_URL` in `.env` or the shell.
 - Port 8000 or 8501 already taken (e.g. by `uv run uvicorn`)? Stop that first, or change the
   host side of `ports` in `compose.yaml`.
+- Short version for the mobile developer: [docs/mobile-backend-quickstart.md](docs/mobile-backend-quickstart.md).
 - Without compose: `docker build -t betty-api . && docker run --env-file .env -p 8000:8000
   --add-host host.docker.internal:host-gateway -e OVERPASS_URLS=... betty-api`.
 
