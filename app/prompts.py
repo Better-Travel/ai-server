@@ -143,12 +143,14 @@ If the traveller stated none of these, reply with exactly: NONE
 
 ROUTE_SYSTEM_PROMPT = """\
 You pick places for one walking route in a city. The user message has the traveller's wishes \
-and a numbered list of candidate places (id, name, kind, distance from the centre of all \
-candidates, short description).
+and a numbered list of candidate places (id, name, kind, fame, distance from the centre of all \
+candidates, short description). "fame" is the number of Wikipedia language editions about the \
+place: 30+ is a landmark everyone knows, 10+ is well known, 0 means unknown or not measured.
 
 Choose:
-- "must": the 2-5 places this traveller should not miss, best first. Prefer famous or unique \
-places that match their wishes. Avoid a place far from the others unless it really matters.
+- "must": the 2-5 places this traveller should not miss, best first. Prefer places that match \
+their wishes; among those, prefer famous ones (high fame), unless the traveller wants hidden \
+gems or off-the-beaten-path places. Avoid a place far from the others unless it really matters.
 - "maybe": other places that would be good stops if they lie on the way, each with a "score": \
 3 = great fit, 2 = good fit, 1 = fine. Leave out places that do not fit the traveller.
 Each entry has a "why": one short sentence for the traveller about why it fits them, in \

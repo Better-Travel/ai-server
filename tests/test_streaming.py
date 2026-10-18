@@ -173,10 +173,12 @@ def sse(body: str) -> list[tuple[str, Any]]:
     return parsed
 
 
-def post_stream(service: BettyService, messages: list[dict[str, str]] | None = None) -> Any:
+def post_stream(
+    service: BettyService, messages: list[dict[str, str]] | None = None, **extra: Any
+) -> Any:
     app.dependency_overrides[get_betty_service] = lambda: service
     try:
-        body = {"messages": messages or [m.model_dump() for m in USER]}
+        body = {"messages": messages or [m.model_dump() for m in USER], **extra}
         return TestClient(app).post("/api/v1/chat/stream", json=body)
     finally:
         app.dependency_overrides.clear()
@@ -215,7 +217,7 @@ def test_api_model_failure_is_an_error_event() -> None:
 
 def test_api_crash_is_an_internal_error_event() -> None:
     class Broken(FakeFinder):
-        def __call__(self, request: str) -> FoundPlaces:
+        def __call__(self, request: str, temperature: float = 0.2) -> FoundPlaces:
             raise RuntimeError("bug")
 
     script = StreamScript([chunk(calls=[call(args())])], text("NONE"))
@@ -230,7 +232,7 @@ def test_api_crash_is_an_internal_error_event() -> None:
 
 def test_api_sends_keep_alives_while_searching(monkeypatch: pytest.MonkeyPatch) -> None:
     class Slow(FakeFinder):
-        def __call__(self, request: str) -> FoundPlaces:
+        def __call__(self, request: str, temperature: float = 0.2) -> FoundPlaces:
             time.sleep(0.3)
             return super().__call__(request)
 
@@ -253,3 +255,19 @@ def test_blocking_chat_still_works_alongside() -> None:
     assert make_service(Script(text("Hello"))).chat([Message(role="user", content="hi")]).reply == (
         "Hello"
     )
+
+
+def test_api_passes_places_temperature_to_the_search() -> None:
+    finder = FakeFinder(FoundPlaces(status="ok"))
+    script = StreamScript(
+        [chunk(calls=[call(args())])],
+        text("The traveller loves art."),  # summariser (not streamed)
+        [chunk("Done.")],
+    )
+    assert post_stream(make_service(script, finder), places_temperature=0.7).status_code == 200
+    assert finder.temperatures == [0.7]
+
+
+def test_api_rejects_places_temperature_above_one() -> None:
+    response = post_stream(make_service(StreamScript([chunk("Hi")])), places_temperature=1.5)
+    assert response.status_code == 422

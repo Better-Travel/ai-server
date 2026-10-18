@@ -42,7 +42,12 @@ from app.services.llm_loop import (
     ToolLoop,
     ToolStarted,
 )
-from app.services.place_finder import FoundPlaces, PlaceFinder, PlaceSearcher
+from app.services.place_finder import (
+    DEFAULT_TEMPERATURE,
+    FoundPlaces,
+    PlaceFinder,
+    PlaceSearcher,
+)
 from app.services.route_planner import RouteBuilder, RoutePlanner
 from app.services.search_places_tool import TOOL_NAME as SEARCH_TOOL_NAME
 from app.services.search_places_tool import TOOL_SPEC as SEARCH_TOOL_SPEC
@@ -118,15 +123,21 @@ class BettyService:
             max_tokens=settings.betty_max_tokens,
         )
 
-    def chat(self, messages: Sequence[Message]) -> ChatResult:
-        """Return Betty's next reply; `search` is set when she had enough info and searched."""
+    def chat(
+        self, messages: Sequence[Message], places_temperature: float | None = None
+    ) -> ChatResult:
+        """Return Betty's next reply; `search` is set when she had enough info and searched.
+
+        `places_temperature` (0-1) overrides PLACES_TEMPERATURE for this turn's search.
+        """
         searches: list[PlaceSearch] = []
         event_searches: list[EventSearch] = []
+        handler = self._search_handler(messages, searches, event_searches, places_temperature)
         reply = self._complete(
             build_chat_prompt(date.today()),
             messages,
             tools=[SEARCH_TOOL_SPEC],
-            handlers={SEARCH_TOOL_NAME: self._search_handler(messages, searches, event_searches)},
+            handlers={SEARCH_TOOL_NAME: handler},
         )
         return ChatResult(
             reply=reply,
@@ -134,7 +145,9 @@ class BettyService:
             events=event_searches[-1] if event_searches else None,
         )
 
-    def chat_stream(self, messages: Sequence[Message]) -> Generator[ChatEvent]:
+    def chat_stream(
+        self, messages: Sequence[Message], places_temperature: float | None = None
+    ) -> Generator[ChatEvent]:
         """Betty's next reply as it is written, for clients that show or speak it right away.
 
         Yields `delta` events with the reply text, `status` while she searches, `search` and
@@ -145,11 +158,12 @@ class BettyService:
         searches: list[PlaceSearch] = []
         event_searches: list[EventSearch] = []
         found_before = events_before = 0
+        handler = self._search_handler(messages, searches, event_searches, places_temperature)
         loop = self._loop.stream(
             build_chat_prompt(date.today()),
             messages,
             tools=[SEARCH_TOOL_SPEC],
-            handlers={SEARCH_TOOL_NAME: self._search_handler(messages, searches, event_searches)},
+            handlers={SEARCH_TOOL_NAME: handler},
         )
         try:
             for event in loop:
@@ -180,6 +194,7 @@ class BettyService:
         messages: Sequence[Message],
         searches: list[PlaceSearch],
         event_searches: list[EventSearch],
+        places_temperature: float | None = None,
     ) -> Callable[[str], str]:
         """The search_places tool for one turn; each search is appended to the given lists."""
 
@@ -191,7 +206,12 @@ class BettyService:
             events = self._events_for(trip, summary)
             if events is not None:
                 event_searches.append(events)
-            search, tool_result = self._search(trip, summary, events)
+            temperature = (
+                self._settings.places_temperature
+                if places_temperature is None
+                else places_temperature
+            )
+            search, tool_result = self._search(trip, summary, events, temperature)
             searches.append(search)
             return tool_result
 
@@ -270,7 +290,11 @@ class BettyService:
             return trip.describe()
 
     def _search(
-        self, trip: Trip, summary: str, events: EventSearch | None = None
+        self,
+        trip: Trip,
+        summary: str,
+        events: EventSearch | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
     ) -> tuple[PlaceSearch, str]:
         """Run find_places on the summary; return the outcome + the text Betty sees."""
         if self._find_places is None:
@@ -278,8 +302,8 @@ class BettyService:
                 status="error", message="Place search is disabled (BETTY_PLACES_TOOL=false)."
             )
         else:
-            logger.info("find_places request: %r", summary)
-            found = self._find_places(summary)
+            logger.info("find_places request (temperature %.2f): %r", temperature, summary)
+            found = self._find_places(summary, temperature)
         logger.info(
             "find_places result: status=%s total=%d shown=%d message=%r",
             found.status,

@@ -93,9 +93,24 @@ traveller <-> Betty --search_places(trip)--> validate trip --> summarize(history
    doesn't say where, the model replies `NO_QUERY: ...` (`needs_info`). Duplicates are dropped
    first: elements that share a `wikidata` tag, or have the same name less than 100 m apart (the
    Royal Castle is mapped as a building and as a museum point), keep only the one with more tags.
-   At most 30 sights and attractions go back to Betty and the client (food and drink are excluded): Wikipedia-tagged ones first, then a mix of kinds;
-   cropping logs a warning (interim). The prompt also tells the model to leave memorial plaques
-   and stolpersteine out of `historic=memorial`, since Warsaw has thousands.
+   At most 30 sights and attractions go back to Betty and the client (food and drink are
+   excluded), chosen by **fame** with a **temperature** (see below). The prompt also tells the
+   model to leave memorial plaques and stolpersteine out of `historic=memorial`, since Warsaw
+   has thousands.
+   - **Fame** (`osm/fame.py`) = the number of Wikipedia language editions of the place's
+     Wikidata item (Palace of Culture 51, Royal Castle 43, most memorials 0-2). A broad Warsaw
+     search returns about 2,800 places and OSM tags can't tell a landmark from a roadside
+     memorial; fame can. The counts are precomputed for Warsaw in `osm/data/warsaw_fame.json`
+     (`uv run python -m osm.fame`, uses `OVERPASS_URLS` and Wikidata, ~10 s), because Wikidata is
+     slow and rate-limits bursts. A count is used only if the Wikidata item's coordinates are
+     within 2 km of the OSM object (wrong tags like the Quaker movement on a meeting house are
+     ignored). Other cities have no counts: Wikipedia-tagged places still come first there.
+   - **Temperature** (`PLACES_TEMPERATURE`, default 0.2, or `places_temperature` per chat
+     request): 0 takes the 30 best known; higher values sample from the 150 best known
+     (softmax over log fame, Gumbel-top-k); 1 is uniform over those 150. At 0.2 about 9 of the 10
+     best known stay and a third of the list are other picks. The random seed is the summary,
+     so the same request gives the same places. At most 4 places of one kind while others are
+     left. Each place carries `fame`, and the route LLM sees it.
 4. **Route** (`app/services/route_planner.py`): one LLM call (same model and keys as the query
    writer) picks 2-5 must-visit places for this traveller and scores the others 1-3 (`why` for
    each). Code orders the must-visits into the shortest open path (nearest neighbour from every
@@ -186,10 +201,10 @@ question that needs a web search makes two calls. Clients should play a short fi
 
 The server is stateless: send the full history on each call.
 
-- `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}]}` →
+- `POST /api/v1/chat`: `{"messages": [{"role": "user"|"assistant", "content": "..."}], "places_temperature": 0.2}` →
   `{"reply": "...", "search": null | {...}}`. `search` is set only on a turn where Betty had enough
   information and searched:
-  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, wikipedia}], "routes": [{"stops": [{osm_id, name, category, lat, lon, role, why}], "distance_km": 3.4}], "error": null}`.
+  `{"trip": {city, district, country, scope, start_date, end_date, duration_days}, "summary": "<text sent to find_places>", "total": 57, "places": [{osm_id, name, type, category, lat, lon, tags, fame, wikipedia}], "routes": [{"stops": [{osm_id, name, category, lat, lon, role, why}], "distance_km": 3.4}], "error": null}`.
   `error` is set when the trip was accepted but the search failed. Keep the last `search` on the
   client; Betty searches again when the trip changes.
   - `osm_id` is the stable OSM id (`"node/123"`, `"way/456"`): use it to dedupe, save favourites

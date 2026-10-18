@@ -31,6 +31,13 @@ class Settings(BaseSettings):
         default="http://localhost:8080", description="Base URL of the BetterTravel backend."
     )
     betty_max_tool_rounds: int = Field(default=3, gt=0)
+    places_temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Default variety of found places: 0 = strictly the best known, 1 = random "
+        "among the 150 best known. A chat request can override it.",
+    )
     guide_model: str | None = Field(
         default=None, description="Model for the sight guide; defaults to BETTY_MODEL."
     )

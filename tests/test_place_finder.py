@@ -1,18 +1,22 @@
 """find_places (PlaceFinder): plain text in, typed places out (no network)."""
 
+import random
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from app.services.place_finder import (
+    MAX_PER_KIND,
     MAX_REQUEST_CHARS,
     MAX_RESULTS,
+    SAMPLE_POOL,
+    FoundPlaces,
     PlaceFinder,
+    cap_per_kind,
     drop_duplicates,
     is_food,
-    select_diverse,
-    select_notable_first,
+    select_places,
 )
 from osm.pipeline import NeedsMoreInfo, QueryGenerationFailed
 from osm.schemas import OverpassElement, WikipediaInfo, WikipediaText
@@ -179,28 +183,106 @@ def test_duplicates_are_dropped_before_selection(monkeypatch: pytest.MonkeyPatch
     assert [p.osm_id for p in found.places] == ["way/1"]
 
 
-def test_selection_takes_turns_between_kinds() -> None:
-    """Live search returned 947 places and the first 20 were all cafes."""
-    cafes = [element(i, amenity="cafe") for i in range(30)]
-    castles = [element(100 + i, historic="castle") for i in range(2)]
-    palaces = [element(200 + i, historic="palace") for i in range(2)]
-    picked = select_diverse(cafes + castles + palaces, 6)
-    kinds = [e.tags.get("historic") or e.tags["amenity"] for e in picked]
-    assert sorted(kinds) == ["cafe", "cafe", "castle", "castle", "palace", "palace"]
+def famous(id: int, editions: int, kind: str = "museum") -> OverpassElement:
+    return element(id, tourism=kind, wikidata=f"Q{editions}")
 
 
-def test_selection_prefers_places_with_wikipedia() -> None:
-    plain = [element(i, amenity="cafe") for i in range(5)]
-    notable = element(99, amenity="cafe", wikipedia="pl:Cafe")
-    assert select_diverse([*plain, notable], 1) == [notable]
+@pytest.fixture
+def fame_from_qid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fame = the number in the element's wikidata tag (Q43 -> 43), so tests need no file."""
+    monkeypatch.setattr(
+        "app.services.place_finder.fame",
+        lambda e: int(e.tags["wikidata"][1:]) if "wikidata" in e.tags else 0,
+    )
 
 
-def test_selection_keeps_everything_when_under_the_limit() -> None:
-    elements = [element(1, amenity="cafe"), element(2, tourism="museum")]
-    assert select_diverse(elements, 20) == elements
+@pytest.mark.usefixtures("fame_from_qid")
+def test_temperature_zero_takes_the_best_known_in_order() -> None:
+    elements = [
+        famous(i, editions, kind)
+        for i, (editions, kind) in enumerate(
+            [(3, "museum"), (43, "attraction"), (0, "gallery"), (51, "viewpoint"), (12, "zoo")]
+        )
+    ]
+    assert [e.id for e in select_places(elements, 3, 0)] == [3, 1, 4]
 
 
-def test_large_results_are_cropped_with_a_warning(
+@pytest.mark.usefixtures("fame_from_qid")
+def test_wikipedia_tag_beats_unknown_when_nothing_has_fame() -> None:
+    """Outside Warsaw there are no fame counts: places with a Wikipedia tag still come first."""
+    plain = [element(i, historic="castle") for i in range(5)]
+    notable = element(9, historic="castle", wikipedia="pl:Zamek")
+    assert select_places([*plain, notable], 1, 0) == [notable]
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_one_kind_cannot_fill_every_slot_while_others_are_left() -> None:
+    museums = [famous(i, 40 - i) for i in range(10)]
+    parks = [famous(100 + i, 5, "viewpoint") for i in range(3)]
+    picked = select_places(museums + parks, 6, 0)
+    assert MAX_PER_KIND == 4
+    assert [e.id for e in picked] == [0, 1, 2, 3, 100, 101]
+
+
+def test_cap_fills_remaining_slots_when_only_one_kind_is_left() -> None:
+    museums = [element(i, tourism="museum") for i in range(10)]
+    assert cap_per_kind(museums, 6) == museums[:6]
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_sampling_is_reproducible_with_the_same_seed_and_varies_otherwise() -> None:
+    elements = [famous(i, i % 50, f"k{i % 20}") for i in range(300)]
+    first = select_places(elements, 30, 0.5, random.Random(1))
+    assert first == select_places(elements, 30, 0.5, random.Random(1))
+    assert first != select_places(elements, 30, 0.5, random.Random(2))
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_sampling_only_draws_from_the_best_known_pool() -> None:
+    known = [famous(i, 1000 + i, f"k{i % 40}") for i in range(SAMPLE_POOL)]
+    unknown = [element(1000 + i, tourism="artwork") for i in range(2000)]
+    for seed in range(20):
+        picked = select_places(known + unknown, 30, 1.0, random.Random(seed))
+        assert len(picked) == 30 and all("wikidata" in e.tags for e in picked)
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_low_temperature_keeps_more_of_the_top_than_high_temperature() -> None:
+    elements = [famous(i, 1 + i, f"k{i % 40}") for i in range(SAMPLE_POOL)]
+    top = {e.id for e in select_places(elements, 30, 0)}
+
+    def kept(temperature: float) -> float:
+        runs = [select_places(elements, 30, temperature, random.Random(s)) for s in range(30)]
+        return sum(len(top & {e.id for e in run}) for run in runs) / len(runs)
+
+    assert 30 > kept(0.1) > kept(0.5) > kept(1.0)
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_small_results_ignore_temperature() -> None:
+    elements = [famous(i, i) for i in range(3)]
+    assert [e.id for e in select_places(elements, 30, 1.0)] == [2, 1, 0]
+
+
+@pytest.mark.usefixtures("fame_from_qid")
+def test_finder_samples_with_a_seed_from_the_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    many = [famous(i, i % 60, f"k{i % 25}") for i in range(400)]
+    monkeypatch.setattr(
+        "app.services.place_finder.generate_and_run",
+        lambda request, complete, **_: SimpleNamespace(query="Q", attempts=1, results=many),
+    )
+    monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
+
+    def ids(found: FoundPlaces) -> list[str]:
+        return [p.osm_id for p in found.places]
+
+    first = finder()(REQUEST, temperature=0.5)
+    assert ids(first) == ids(finder()(REQUEST, temperature=0.5))
+    assert ids(first) != ids(finder()(REQUEST + " They love art.", temperature=0.5))
+    assert first.places[0].fame == int(first.places[0].tags["wikidata"][1:])
+
+
+def test_large_results_are_cropped_and_logged(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     many = [element(i, historic="castle") for i in range(MAX_RESULTS + 30)]
@@ -209,11 +291,11 @@ def test_large_results_are_cropped_with_a_warning(
         lambda request, complete, **_: SimpleNamespace(query="Q", attempts=1, results=many),
     )
     monkeypatch.setattr("app.services.place_finder.enrich", lambda elements: elements)
-    caplog.set_level("WARNING")
+    caplog.set_level("INFO")
     found = finder()(REQUEST)
     assert found.total == MAX_RESULTS + 30
     assert len(found.places) == MAX_RESULTS == 30
-    assert f"returned {MAX_RESULTS + 30} places; cropping to the {MAX_RESULTS} best" in caplog.text
+    assert f"returned {MAX_RESULTS + 30} places; sampling {MAX_RESULTS}" in caplog.text
 
 
 def test_small_results_are_not_cropped_or_warned(
@@ -282,16 +364,6 @@ def test_is_food() -> None:
     assert not is_food(element(2, amenity="bar", historic="castle"))
     assert not is_food(element(3, tourism="museum"))
     assert not is_food(element(4))
-
-
-def test_notable_places_come_first_even_when_their_kind_is_common() -> None:
-    plain_castles = [element(i, historic="castle") for i in range(10)]
-    notable_monuments = [element(100 + i, historic="monument", wikipedia="pl:M") for i in range(3)]
-    notable_museum = element(200, tourism="museum", wikidata="Q9")
-    picked = select_notable_first([*plain_castles, *notable_monuments, notable_museum], 6)
-    assert {e.id for e in picked[:4]} == {100, 101, 102, 200}  # all notable ones before the rest
-    assert all(e.tags["historic"] == "castle" for e in picked[4:])
-    assert len(picked) == 6
 
 
 def test_the_pipeline_is_told_to_search_sights_only(monkeypatch: pytest.MonkeyPatch) -> None:

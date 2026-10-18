@@ -148,9 +148,11 @@ class FakeFinder:
     def __init__(self, found: FoundPlaces) -> None:
         self.found = found
         self.requests: list[str] = []
+        self.temperatures: list[float] = []
 
-    def __call__(self, request: str) -> FoundPlaces:
+    def __call__(self, request: str, temperature: float = 0.2) -> FoundPlaces:
         self.requests.append(request)
+        self.temperatures.append(temperature)
         return self.found
 
 
@@ -360,3 +362,10 @@ def test_two_empty_model_responses_fail() -> None:
 
     with pytest.raises(BettyError, match="empty response"):
         make_service(Script(text(""), text(""))).chat(USER)
+
+
+def test_places_temperature_defaults_to_the_setting_and_can_be_overridden() -> None:
+    finder = FakeFinder(FoundPlaces(status="ok"))
+    make_service(Script(tool_call(args()), text("t"), text("ok")), finder).chat(USER)
+    make_service(Script(tool_call(args()), text("t"), text("ok")), finder).chat(USER, 0.9)
+    assert finder.temperatures == [0.2, 0.9]

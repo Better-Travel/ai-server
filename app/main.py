@@ -109,7 +109,7 @@ def chat(request: ChatRequest, betty: BettyDep) -> ChatResponse:
             len(request.messages),
             request.messages[-1].content,
         )
-        result = betty.chat(request.messages)
+        result = betty.chat(request.messages, request.places_temperature)
         search = result.search
         logger.info(
             "chat done: searched=%s reply=%r trip=%s places=%s error=%r",
@@ -154,7 +154,7 @@ async def chat_stream(request: ChatRequest, betty: BettyDep) -> StreamingRespons
         request.messages[-1].content,
     )
     return StreamingResponse(
-        _stream_turn(betty, request.messages, turn_id),
+        _stream_turn(betty, request.messages, turn_id, request.places_temperature),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -172,7 +172,10 @@ def _sse(name: str, data: BaseModel) -> str:
 
 
 async def _stream_turn(
-    betty: BettyService, messages: Sequence[Message], turn_id: str
+    betty: BettyService,
+    messages: Sequence[Message],
+    turn_id: str,
+    places_temperature: float | None = None,
 ) -> AsyncIterator[str]:
     """Run the (blocking) chat_stream in a thread and forward its events, with keep-alives.
 
@@ -190,7 +193,7 @@ async def _stream_turn(
             loop.call_soon_threadsafe(queue.put_nowait, item)
 
     def produce() -> None:
-        events = betty.chat_stream(messages)
+        events = betty.chat_stream(messages, places_temperature)
         try:
             for event in events:
                 if stop.is_set():

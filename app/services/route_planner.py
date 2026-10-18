@@ -113,7 +113,7 @@ def build_request(request: str, places: list[Place]) -> str:
         lon=sum(p.lon or 0 for p in places) / len(places),
     )
     lines = [
-        f"p{i} | {_display_name(p)} | {p.category} | "
+        f"p{i} | {_display_name(p)} | {p.category} | fame {p.fame} | "
         f"{distance_m(p, centre) / 1000:.1f} km from centre | {_description(p)}"
         for i, p in enumerate(places, start=1)
     ]

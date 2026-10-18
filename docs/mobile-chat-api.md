@@ -50,6 +50,9 @@ Both chat endpoints take the same body:
 - `messages`: oldest first, at least one. `role` is `"user"` or `"assistant"`, `content` is
   non-empty text. The field is **`content`** (the mock server currently uses `text`).
 - The last message must be from the user, otherwise the server answers HTTP 422.
+- `places_temperature` (optional, 0-1, default 0.2): how varied the found places are. 0 =
+  strictly the best known (the same landmarks every time), 1 = any of the city's 150 best known
+  at random. Good for a "surprise me" / "hidden gems" switch. Outside 0-1 the server answers 422.
 - Unknown fields are ignored, so the app can already send fields from
   [Not available yet](#not-available-yet) without breaking anything.
 

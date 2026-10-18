@@ -127,6 +127,11 @@ class Place(BaseModel):
     lat: float | None = None
     lon: float | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    fame: int = Field(
+        default=0,
+        description="How well known it is: Wikipedia language editions of its Wikidata item "
+        "(Royal Castle 43); 0 if unknown. Precomputed for Warsaw only.",
+    )
     wikipedia: dict[str, WikipediaSnippet] | None = Field(
         default=None, description="Keyed by language code ('pl', 'en')."
     )
@@ -189,7 +194,8 @@ class PlaceSearch(BaseModel):
     total: int = Field(default=0, description="Number of distinct places OpenStreetMap returned.")
     places: list[Place] = Field(
         default_factory=list,
-        description="Sights and attractions only (no food), max 30, notable ones first.",
+        description="Sights and attractions only (no food), max 30, best known first (sampled "
+        "with the places temperature).",
     )
     routes: list[Route] = Field(
         default_factory=list,
@@ -308,6 +314,13 @@ class ChatRequest(BaseModel):
     """Conversation history so far; the last message must come from the user."""
 
     messages: list[Message] = Field(min_length=1)
+    places_temperature: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Variety of the places a search returns: 0 = strictly the best known, "
+        "1 = any of the city's 150 best known at random. Default: PLACES_TEMPERATURE (0.2).",
+    )
 
 
 class ChatResponse(BaseModel):

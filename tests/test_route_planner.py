@@ -156,5 +156,8 @@ def test_request_lists_places_with_ids_names_and_descriptions() -> None:
     )
     text = build_request("Art", [museum, place(2, 52.21)])
     assert text.startswith("Traveller's wishes: Art")
-    assert "p1 | Big Museum (P1) | tourism=museum | 0.6 km from centre | A big museum." in text
+    assert (
+        "p1 | Big Museum (P1) | tourism=museum | fame 0 | 0.6 km from centre | A big museum."
+        in text
+    )
     assert "p2 | P2 |" in text
